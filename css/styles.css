@@ -1,0 +1,772 @@
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --border: #e2e5ee;
+  --text: #1c2333;
+  --muted: #6b7280;
+  --accent: #3454d1;
+  --accent-dark: #2740a8;
+  --danger: #d1453b;
+  --ok: #1c8a5a;
+  --warn: #b8860b;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---------- 좌측 앱 레일(헤더+메뉴 전체) ---------- */
+.appRail {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 104px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 16px 8px;
+  gap: 4px;
+  overflow-y: auto;
+  z-index: 40;
+}
+.railBrand {
+  text-align: center;
+  padding: 4px 0 14px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.railBrandIcon { font-size: 26px; display: block; }
+.railBrandText { display: block; font-size: 11px; font-weight: 700; line-height: 1.3; margin-top: 4px; }
+.railBrand .betaTag { position: absolute; top: -2px; right: 4px; font-size: 9px; padding: 1px 4px; }
+.railNav { display: flex; flex-direction: column; gap: 6px; }
+
+.betaTag { font-size: 10px; background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 6px; vertical-align: middle; }
+
+.tabBtn {
+  border: none; background: transparent; border-radius: 8px;
+  cursor: pointer; font-size: 14px; color: var(--muted); font-weight: 600;
+  font-family: inherit;
+}
+.tabBtn:hover { background: #eef0f8; }
+.tabBtn.active { background: var(--accent); color: #fff; }
+
+.tabBtn.railTabBtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 10px 4px; text-align: center;
+}
+.railIcon { font-size: 19px; line-height: 1; }
+.railLabel { font-size: 11px; line-height: 1.2; }
+
+main {
+  margin-left: 104px;
+  padding: 20px;
+  max-width: 1400px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.card h2 { margin-top: 0; font-size: 16px; }
+.hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.dangerTitle { color: var(--danger); }
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+.formGrid label, .modalBox label, .detailForm label {
+  display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600;
+}
+input[type=text], input[type=number], select, textarea {
+  font-size: 14px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  font-family: inherit; color: var(--text); background: #fff;
+}
+input[type=file] { font-size: 13px; }
+textarea { resize: vertical; }
+.checkboxLabel { flex-direction: row !important; align-items: center; gap: 8px !important; font-weight: 500; }
+.exportInlineOptionsRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; }
+.advancedDetails { margin: 10px 0; font-size: 13px; color: var(--muted); }
+.advancedDetails summary { cursor: pointer; font-weight: 600; }
+
+.btnPrimary, .btnSecondary, .btnGhost, .btnDanger {
+  border: none; border-radius: 8px; padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.btnPrimary { background: var(--accent); color: #fff; }
+.btnPrimary:hover { background: var(--accent-dark); }
+.btnPrimary:disabled { background: #b6c0e6; cursor: not-allowed; }
+.btnSecondary { background: #eef0f8; color: var(--accent-dark); }
+.btnSecondary:hover { background: #e1e5f7; }
+.btnSecondary.active { background: var(--ok); color: #fff; }
+.btnGhost { background: transparent; color: var(--muted); }
+.btnGhost:hover { background: #eee; }
+.btnDanger { background: #fdecea; color: var(--danger); }
+.btnDanger:hover { background: #fbdcd9; }
+.btnDanger:disabled { color: #d7a6a2; background: #fdecea; cursor: not-allowed; }
+
+.statusText { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 18px; }
+
+/* ---------- 공통 유틸 ---------- */
+.hidden { display: none !important; }
+.full { width: 100%; }
+.emptyState {
+  text-align: center; padding: 48px 24px; color: var(--muted);
+  font-size: 14px; line-height: 1.7;
+}
+
+/* ---------- 탭 패널 ---------- */
+.tabPanel { display: none; }
+.tabPanel.active { display: block; }
+
+/* ---------- 가져오기 — 사이드바 레이아웃 ---------- */
+.importLayout {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  align-items: flex-start;
+  min-height: calc(100vh - 56px);
+}
+
+.importSidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-right: 16px;
+  flex-shrink: 0;
+  transition: width 0.22s, min-width 0.22s;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  align-self: flex-start;
+}
+.importSidebar.collapsed {
+  width: 44px;
+  min-width: 44px;
+  overflow: hidden;
+}
+.importSidebar.collapsed .sidebarBody { display: none; }
+
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.sidebarHead h2 { margin: 0; font-size: 15px; }
+.importSidebar.collapsed .sidebarHead { justify-content: center; padding: 14px 10px; }
+.importSidebar.collapsed .sidebarHead h2 { display: none; }
+
+.sidebarToggleBtn {
+  border: none; background: #eef0f8; color: var(--accent-dark);
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  font-size: 14px; line-height: 1; flex-shrink: 0;
+}
+.sidebarToggleBtn:hover { background: #dde2f6; }
+
+.sidebarBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 20px;
+}
+.sidebarBody label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; color: var(--muted); font-weight: 600;
+}
+.sidebarBody input[type=text],
+.sidebarBody input[type=number],
+.sidebarBody select {
+  font-size: 13px; padding: 7px 9px;
+}
+
+.importMain {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- 코드 미리보기 박스 ---------- */
+.codePreviewBox {
+  background: #f3f4f8;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.codePreviewLabel { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+.codePreview { font-size: 13px; font-family: 'Courier New', monospace; font-weight: 700; color: var(--accent-dark); word-break: break-all; }
+
+/* ---------- 리뷰 확대/축소 ---------- */
+.zoomControl { display: flex; align-items: center; gap: 4px; background: #f3f4f8; border-radius: 8px; padding: 4px 6px; }
+.zoomBtn { width: 26px; height: 26px; padding: 0; font-size: 15px; border-radius: 6px; }
+.zoomLabel { font-size: 12px; color: var(--muted); min-width: 40px; text-align: center; font-weight: 600; }
+
+.reviewAreaScroll {
+  overflow: auto;
+  max-height: calc(100vh - 130px);
+  border-radius: 8px;
+  background: #eceef5;
+  padding: 12px;
+}
+.reviewArea {
+  --pageZoom: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.pageReview { width: calc(760px * var(--pageZoom, 1)); flex-shrink: 0; }
+
+/* ---------- 세트 공통 박스 / 넘김 조각 박스 스타일 ---------- */
+.qbox.setIntroBox { border-color: #c2410c; background: rgba(194, 65, 12, 0.10); }
+.qbox.setIntroBox .qboxLabel { background: #c2410c; }
+.qbox.overflowBox { border-style: dashed; }
+.qboxLabel .partBadge {
+  background: rgba(255,255,255,.3); border-radius: 3px; padding: 0 4px; font-size: 10px;
+}
+.setRangeInput { width: 54px; font-size: 11px; padding: 1px 2px; border: none; border-radius: 3px; }
+
+/* ---------- 가져오기 — 배치(대기열) 목록 ---------- */
+.batchToolbar {
+  display: flex; align-items: center; gap: 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+#batchCount { font-size: 13px; color: var(--muted); font-weight: 600; }
+.batchList { display: flex; flex-direction: column; gap: 10px; }
+.batchRow {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.batchRowTop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.batchFileName { font-weight: 700; font-size: 14px; }
+.batchStatusBadge { font-size: 11px; padding: 2px 9px; border-radius: 10px; font-weight: 700; }
+.status-pending { background: #f0f1f5; color: var(--muted); }
+.status-analyzing { background: #fdf3dc; color: var(--warn); }
+.status-analyzed { background: #eef0f8; color: var(--accent-dark); }
+.status-reviewed { background: #e4f6ec; color: var(--ok); }
+.status-saving { background: #fdf3dc; color: var(--warn); }
+.status-saved { background: #e4f6ec; color: var(--ok); }
+.status-error { background: #fdecea; color: var(--danger); }
+
+.batchRowFields {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;
+}
+.batchRowFields label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.batchRowFields input { font-size: 13px; padding: 6px 8px; }
+.metaFieldLabelRow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.metaApplyAllBtn {
+  border: none; background: none; color: var(--accent); font-size: 10px; font-weight: 700;
+  cursor: pointer; padding: 0; white-space: nowrap; text-decoration: underline; text-decoration-style: dotted;
+}
+.metaApplyAllBtn:hover { color: var(--accent-dark); }
+.batchRowMemoryBadge {
+  display: inline-block; align-self: flex-start; font-size: 11px; font-weight: 600;
+  background: #eef0f8; color: var(--accent-dark); border-radius: 10px; padding: 2px 9px;
+}
+.batchRowCode { font-family: 'Courier New', monospace; font-size: 12px; color: var(--accent-dark); }
+.batchRowMsg { font-size: 12px; color: var(--muted); }
+.batchRowMsg.error { color: var(--danger); }
+.batchRowActions { display: flex; gap: 8px; flex-wrap: wrap; }
+.batchRowActions button { font-size: 12px; padding: 6px 12px; }
+
+/* 라이브러리 상단바: 문제보기/문제지보기 전환 + 목록형/카드형 전환을 한 줄로 통합 */
+.libTopBar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; margin-bottom: 10px; flex-wrap: wrap; }
+.libViewSwitch { display: flex; gap: 8px; align-items: center; }
+.viewSwitchBtn {
+  border: none; background: #eef0f8; color: var(--muted); font-weight: 600;
+  padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  font-family: inherit;
+}
+.viewSwitchBtn:hover { background: #dde2f6; color: var(--accent-dark); }
+.viewSwitchBtn.active { background: var(--accent); color: #fff; }
+
+.viewSwitchBtn.small { padding: 6px 12px; font-size: 13px; }
+.libModeBar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.libModeBarLabel { font-size: 12px; color: var(--muted); font-weight: 600; }
+.libModeBarHint { margin-left: 4px; }
+
+/* 검색/필터 줄 + 선택/일괄작업 줄을 한 카드 안에 세로로 살짝만 간격을 두고 배치 */
+.libControlBar { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; margin-bottom: 12px; }
+
+/* ---------- 문제지(papers) 그리드 ---------- */
+.papersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  padding: 4px 0;
+}
+.paperCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 6px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  position: relative;
+}
+.paperCard:hover { box-shadow: 0 4px 16px rgba(52,84,209,.12); }
+.paperCard.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(52,84,209,.18); }
+.paperCardCheck {
+  position: absolute; top: 12px; right: 14px; margin: 0; padding: 0;
+}
+.paperCardCheck input { width: 16px; height: 16px; cursor: pointer; }
+.paperTitle { font-size: 15px; font-weight: 700; }
+.paperCode {
+  font-family: 'Courier New', monospace; font-size: 12px;
+  color: var(--accent-dark); background: #eef0f8;
+  padding: 2px 8px; border-radius: 6px; align-self: flex-start;
+}
+.paperMeta { font-size: 12px; color: var(--muted); }
+.paperStats { font-size: 12px; color: var(--muted); padding-top: 4px; border-top: 1px solid var(--border); }
+.paperActions { display: flex; gap: 8px; margin-top: 4px; }
+.paperActions button { font-size: 12px; padding: 6px 12px; }
+
+/* ---------- 문제 목록 코드 행 ---------- */
+.rowCode {
+  font-family: 'Courier New', monospace; font-size: 14px; font-weight: 700;
+  color: var(--accent-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rowCodeSub { font-weight: 500; color: var(--muted); font-size: 12px; font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+.rowTitleSub { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- 가져오기 리뷰 리뷰 툴바 sticky 위치 조정 ---------- */
+.reviewToolbar {
+  display: flex; align-items: center; gap: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+  position: sticky; top: 0; z-index: 10; flex-wrap: wrap;
+}
+.reviewHelp { font-size: 12px; color: var(--muted); flex: 1 1 260px; }
+.spacer { flex: 1; }
+.pageReview { position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
+.pageReview img { display: block; width: 100%; height: auto; user-select: none; }
+.pageLabel { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+.boxOverlay { position: absolute; inset: 0; }
+
+.qbox {
+  position: absolute; border: 2px solid var(--accent); background: rgba(52,84,209,0.10);
+  cursor: move;
+}
+.qbox.drawGhost { border-color: var(--ok); background: rgba(28,138,90,0.12); pointer-events: none; }
+.qboxLabel {
+  position: absolute; top: -22px; left: -2px; background: var(--accent); color: #fff;
+  font-size: 11px; padding: 1px 4px; border-radius: 4px; display: flex; align-items: center; gap: 4px;
+}
+.qnumInput { width: 34px; font-size: 11px; padding: 1px 2px; border: none; border-radius: 3px; }
+.qboxDel { border: none; background: rgba(255,255,255,.25); color: #fff; width: 16px; height: 16px; border-radius: 3px; cursor: pointer; line-height: 1; }
+.resizeHandle {
+  position: absolute; width: 14px; height: 14px; right: -7px; bottom: -7px;
+  background: var(--accent); border: 2px solid #fff; border-radius: 50%; cursor: nwse-resize;
+}
+
+/* ---------- 라이브러리 ---------- */
+.filterBar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filterBar input, .filterBar select { flex: 1 1 160px; min-width: 140px; }
+.actionBar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.libCount { color: var(--muted); font-size: 13px; }
+
+.libList { position: relative; height: calc(100vh - 270px); min-height: 420px; overflow-y: auto; overflow-x: hidden; padding: 10px; }
+.libListPhantom { width: 1px; }
+.libListInner { position: absolute; top: 0; left: 10px; right: 10px; }
+
+/* 가상스크롤 한 "행" = 화면 폭에 따라 1~3개 아이템(목록형/카드형 공용 그리드) */
+.libGridRow { display: grid; gap: 12px; padding-bottom: 10px; box-sizing: border-box; align-items: stretch; }
+
+.libRow {
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: #fff;
+  height: 100%; min-width: 0; box-sizing: border-box;
+}
+.libRow:hover { background: #f6f8ff; border-color: var(--accent); }
+.rowThumb { width: 56px; height: 72px; object-fit: cover; border: 1px solid var(--border); border-radius: 4px; background: #fafafa; flex-shrink: 0; }
+.rowInfo { flex: 1; min-width: 0; }
+.rowTags { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+.tagChip { background: #eef0f8; color: var(--accent-dark); font-size: 11px; padding: 1px 7px; border-radius: 10px; }
+.rowStatus { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.badge-ok { background: #e4f6ec; color: var(--ok); }
+.badge-warn { background: #fdf3dc; color: var(--warn); }
+.badge-muted { background: #f0f1f5; color: var(--muted); }
+
+/* ---------- 문제 목록 — 카드형(세로, 미리보기 큼) ---------- */
+.libCard {
+  display: flex; flex-direction: column; height: 100%; min-width: 0;
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  cursor: pointer; background: #fff; box-sizing: border-box;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.libCard:hover { box-shadow: 0 4px 14px rgba(52,84,209,.15); border-color: var(--accent); }
+.libCardThumbWrap { position: relative; height: 62%; min-height: 120px; background: #f2f3f8; flex-shrink: 0; }
+.libCardThumb { width: 100%; height: 100%; object-fit: contain; display: block; }
+.libCardChk { position: absolute; top: 8px; left: 8px; width: 18px; height: 18px; cursor: pointer; }
+.libCardBody { padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; flex: 1; min-height: 0; }
+.libCardCode { font-family: 'Courier New', monospace; font-size: 14px; font-weight: 700; color: var(--accent-dark); }
+.libCardTitleSub {
+  font-size: 11px; color: var(--muted); line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.libCardTags { display: flex; gap: 4px; flex-wrap: wrap; }
+.libCardStatus { display: flex; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+
+/* ---------- 오버레이 공통 ---------- */
+.overlay {
+  position: fixed; inset: 0; background: rgba(15,18,30,.55); display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
+}
+
+.modalBox {
+  background: #fff; border-radius: var(--radius); padding: 22px 24px; width: 100%; max-width: 480px;
+  display: flex; flex-direction: column; gap: 12px; max-height: 90vh; overflow-y: auto;
+}
+.modalBox h2 { margin: 0 0 4px; font-size: 16px; }
+.modalBox label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.modalActions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px; }
+
+.answerSheetImportBox {
+  background: #f6f7fb; border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+}
+.answerSheetImportRow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.answerSheetImportRow input[type="file"] { flex: 1; min-width: 0; font-size: 12px; }
+
+.bulkApplyPreviewList {
+  max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px;
+  display: flex; flex-direction: column;
+}
+.bulkApplyPreviewRow {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.bulkApplyPreviewRow:last-child { border-bottom: none; }
+.bulkApplyPreviewRow.excluded { opacity: 0.45; }
+.bulkApplyIncludeCheck { margin: 0; flex: 0 0 auto; }
+.bulkApplyPreviewTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulkApplyPreviewRow select { max-width: 220px; font-size: 12px; }
+.bulkApplyBadge { font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600; }
+.bulkApplyBadge.ok { background: #e2f6ea; color: #1e7f43; }
+.bulkApplyBadge.warn { background: #fff3d6; color: #9a6b00; }
+.bulkApplyBadge.bad { background: #fde2e2; color: #b3261e; }
+
+/* 개별 문제 뷰어 — 구글 드라이브 미리보기 스타일 전체화면 */
+.overlay.fullscreenOverlay { padding: 0; align-items: stretch; justify-content: stretch; background: rgba(10,12,20,.92); }
+.detailBox {
+  background: #fff; border-radius: 0; width: 100vw; height: 100vh; max-width: none; max-height: none;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.detailHeader {
+  display: flex; justify-content: flex-start; align-items: center; gap: 10px;
+  padding: 10px 18px; border-bottom: 1px solid var(--border); font-weight: 700; flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.detailTitleWrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.detailTitleCol { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+#detailTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detailSubtitle { font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detailNavPos { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.detailNavQGroup { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.detailNavQBtn { font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+.detailNavQBtn:disabled { opacity: .35; cursor: not-allowed; }
+.detailZoomBar { display: flex; align-items: center; gap: 2px; background: #f0f1f5; border-radius: 8px; padding: 2px; flex-shrink: 0; }
+.detailZoomBtn { padding: 6px 10px; font-size: 14px; border-radius: 6px; line-height: 1; }
+.detailZoomBtn:disabled { opacity: .35; cursor: not-allowed; }
+.detailZoomLabel { font-size: 12px; font-weight: 600; min-width: 44px; }
+.detailViewToggleBtn { font-size: 13px; white-space: nowrap; }
+.detailBody { flex: 1 1 auto; display: flex; min-height: 0; overflow: hidden; }
+
+.detailViewer {
+  flex: 1 1 auto; min-width: 0; position: relative; overflow: hidden;
+  background: #20222c; display: flex; align-items: center; justify-content: center; padding: 30px;
+}
+/* 이미지가 1장이든 여러 장이든 항상 같은 그리드 레이아웃(칸=grid item)을 재사용한다(--n으로 칸 수 조절).
+   1장일 때도 grid 1칸이 뷰어 전체를 그대로 채우므로, 여러 장 볼 때 각 칸이 꽉 차는 것과 동일한 기준으로
+   기본(줌 100%) 크기가 정해진다 — 예전처럼 "1장 보기"만 별도 flex 중앙정렬 방식을 쓰지 않는다. */
+.detailImages { width: 100%; height: 100%; display: grid; gap: 16px; }
+.detailImages.layout-row { grid-template-rows: 1fr; grid-template-columns: repeat(var(--n, 1), 1fr); }
+.detailImages.layout-stack { grid-template-columns: 1fr; grid-template-rows: repeat(var(--n, 1), 1fr); }
+/* 이미지 조각 하나당 하나의 스크롤 영역: 확대했을 때 이미지별로 독립적으로 스크롤됨 */
+.detailImgCell {
+  min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
+  overflow: auto; position: relative;
+}
+.detailImgCell .detailImg { max-width: 100%; max-height: 100%; border-radius: 6px; background: #fff; box-shadow: 0 2px 14px rgba(0,0,0,.35); user-select: none; -webkit-user-drag: none; display: block; }
+/* 확대된 상태: flex-start로 정렬해야 스크롤로 이미지의 모든 구석에 도달 가능(중앙정렬 상태로 넘치면 일부 영역에 스크롤로 못 감) */
+.detailImgCell.zoomed { align-items: flex-start; justify-content: flex-start; cursor: grab; }
+.detailImgCell.zoomed .detailImg { max-width: none; max-height: none; }
+.detailImgCell.zoomed.grabbing { cursor: grabbing; }
+
+.detailNavArrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+  width: 46px; height: 46px; border-radius: 50%; border: none; background: rgba(255,255,255,.9);
+  font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,.3); color: var(--text);
+}
+.detailNavArrow:hover { background: #fff; }
+.detailNavArrow-prev { left: 18px; }
+.detailNavArrow-next { right: 18px; }
+.detailImageCounter {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 4px 12px; border-radius: 12px;
+}
+
+.detailSidebar {
+  flex: 0 0 380px; width: 380px; max-width: 40vw; border-left: 1px solid var(--border);
+  background: #fff; overflow-y: auto; padding: 18px;
+}
+.detailForm { display: flex; flex-direction: column; gap: 12px; }
+.detailForm label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.detailActions { display: flex; justify-content: space-between; margin-top: 8px; }
+
+/* ---------- 문제풀이(Solve) — 설정 화면(가져오기/라이브러리 탭 내부 카드형, 데스크톱·모바일 공용) ---------- */
+.solveSetupView { max-width: 640px; margin: 0 auto; }
+.solveResumeActions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.solveFilterGrid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0;
+}
+.solveFilterGrid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.solveModeGroup { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+.solveModeOption {
+  display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+  background: #f6f7fb; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+}
+.solveModeOption input[type="radio"] { width: 18px; height: 18px; flex-shrink: 0; }
+.solveInlineNum { width: 64px; padding: 6px 8px; }
+.solvePickList {
+  border: 1px solid var(--border); border-radius: 10px; max-height: 320px; overflow-y: auto; margin-bottom: 12px;
+}
+.solvePickRow {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border);
+  font-size: 13px; cursor: pointer;
+}
+.solvePickRow:last-child { border-bottom: none; }
+.solvePickRow:hover { background: #f6f8ff; }
+.solvePickRow input { width: 16px; height: 16px; flex-shrink: 0; }
+.solvePickCode { font-family: 'Courier New', monospace; font-weight: 700; color: var(--accent-dark); white-space: nowrap; }
+.solvePickTitle { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.solvePickMoreNote { padding: 10px 12px; font-size: 12px; color: var(--muted); text-align: center; }
+.solveStartRow { display: flex; justify-content: flex-start; }
+.solveStartRow .btnPrimary { padding: 12px 26px; font-size: 15px; }
+
+/* ---------- 문제풀이(Solve) — 풀스크린 모바일 풀이 뷰어 ---------- */
+.overlay.solveOverlay { padding: 0; align-items: stretch; justify-content: stretch; background: #14161f; }
+.solveBox {
+  position: relative; width: 100vw; height: 100vh; background: #14161f; color: #eef0f8;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+.solvePlay { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+.solveTopBar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  background: #1c1f2b; border-bottom: 1px solid #2c3040;
+}
+.solveIconBtn {
+  border: none; background: #262a38; color: #eef0f8; width: 36px; height: 36px; border-radius: 8px;
+  font-size: 16px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+}
+.solveIconBtn:hover { background: #323749; }
+.solveTopMeta { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 6px; }
+.solveMetaCode { font-family: 'Courier New', monospace; font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.solveMetaSub { font-size: 11px; color: #9aa0b4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.solveGradeBtn { flex-shrink: 0; padding: 8px 14px; font-size: 13px; }
+
+.solveImageArea {
+  flex: 1 1 auto; min-height: 0; overflow: auto; background: #0e0f16;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px;
+}
+.solveImageArea img {
+  max-width: 100%; width: auto; height: auto; display: block; background: #fff; border-radius: 6px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.4);
+}
+.solveImageArea.layout-row { flex-direction: row; align-items: flex-start; overflow-x: auto; }
+.solveImageArea.layout-row img { max-height: 100%; width: auto; flex-shrink: 0; }
+
+.solveAnswerPanel {
+  flex: 0 0 auto; padding: 10px 14px; background: #1c1f2b; border-top: 1px solid #2c3040;
+  font-size: 13px; line-height: 1.6; max-height: 30vh; overflow-y: auto;
+}
+.solveAnswerLine { font-weight: 700; margin-bottom: 6px; }
+.solveAnswerLine.ans-correct { color: #4fd68c; }
+.solveAnswerLine.ans-wrong { color: #ff7a72; }
+.solveAnswerExplain { color: #c7cbe0; white-space: pre-wrap; }
+
+.solveChoiceRow {
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 8px 10px; background: #1c1f2b;
+}
+.solveChoiceBtn {
+  flex: 1 1 0; padding: 10px 0; font-size: 15px; font-weight: 700; border-radius: 8px;
+  border: 1px solid #343953; background: #232637; color: #eef0f8; cursor: pointer; font-family: inherit;
+}
+.solveChoiceBtn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.solveChoiceBtn.correctChoice { background: #1c8a5a; border-color: #1c8a5a; color: #fff; }
+.solveChoiceBtn.wrongChoice { background: #b3413a; border-color: #b3413a; color: #fff; }
+.solveChoiceBtn:disabled { cursor: default; }
+
+.solveBottomBar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  background: #1c1f2b; border-top: 1px solid #2c3040;
+}
+.solveNavBtn {
+  flex: 0 0 auto; border: none; background: #262a38; color: #eef0f8; border-radius: 8px;
+  padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.solveNavBtn:hover { background: #323749; }
+.solveNavBtn:disabled { opacity: .4; cursor: not-allowed; }
+.solveProgressWrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.solveProgressBarBg { width: 100%; height: 5px; border-radius: 3px; background: #2c3040; overflow: hidden; }
+.solveProgressBarFill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .2s; }
+.solveProgressLabel { font-size: 12px; font-weight: 700; color: #c7cbe0; white-space: nowrap; }
+
+/* ---------- 문제풀이 — 스와이프 사이드바(문제 목록 드로어) ---------- */
+.solveDrawerEdgeHint {
+  position: absolute; top: 0; left: 0; bottom: 0; width: 14px; z-index: 5;
+}
+.solveDrawerBackdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 20; }
+.solveDrawer {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 78vw; max-width: 340px;
+  background: #1c1f2b; z-index: 21; transform: translateX(-100%); transition: transform .2s ease;
+  display: flex; flex-direction: column; box-shadow: 4px 0 20px rgba(0,0,0,.4);
+}
+.solveDrawer.open { transform: translateX(0); }
+.solveDrawerHead {
+  display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
+  border-bottom: 1px solid #2c3040; font-weight: 700; flex: 0 0 auto;
+}
+.solveDrawerGrid {
+  flex: 1 1 auto; overflow-y: auto; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 12px;
+}
+.solveDrawerBtn {
+  aspect-ratio: 1; border: 1px solid #343953; background: #232637; color: #eef0f8; border-radius: 8px;
+  font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center;
+}
+.solveDrawerBtn.answered { background: #2c3550; border-color: var(--accent); }
+.solveDrawerBtn.current { outline: 2px solid var(--accent); }
+.solveDrawerBtn.correct { background: #1c8a5a; border-color: #1c8a5a; }
+.solveDrawerBtn.wrong { background: #b3413a; border-color: #b3413a; }
+.solveDrawerFoot { flex: 0 0 auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #2c3040; }
+.solveDrawerNewBtn { width: 100%; color: #ff8a82; font-size: 12.5px; }
+
+/* ---------- 문제풀이 — 결과/분석 화면 ---------- */
+.solveResult {
+  flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; background: #14161f; color: #eef0f8;
+}
+.solveResultHead {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+  background: #1c1f2b; border-bottom: 1px solid #2c3040;
+}
+.solveResultHead h2 { margin: 0; font-size: 16px; }
+.solveResultBody { flex: 1 1 auto; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.solveScoreCircle {
+  width: 120px; height: 120px; border-radius: 50%; background: #1c1f2b; border: 4px solid var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 800;
+}
+.solveScoreLine { font-size: 14px; color: #c7cbe0; text-align: center; }
+.solveSubjectBreakdown { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 8px; }
+.solveSubjectRow { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.solveSubjectName { flex: 0 0 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solveSubjectBarBg { flex: 1; height: 8px; border-radius: 4px; background: #2c3040; overflow: hidden; }
+.solveSubjectBarFill { height: 100%; background: var(--ok); border-radius: 4px; }
+.solveSubjectPct { flex: 0 0 44px; text-align: right; color: #c7cbe0; }
+.solveResultList { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 6px; }
+.solveResultRow {
+  display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 8px;
+  font-size: 12.5px; cursor: pointer; background: #232637;
+}
+.solveResultRow.res-correct { background: rgba(28,138,90,.25); }
+.solveResultRow.res-wrong { background: rgba(179,65,58,.28); }
+.solveResultRow.res-nograde { background: #232637; }
+.solveResultActions {
+  flex: 0 0 auto; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: #1c1f2b; border-top: 1px solid #2c3040;
+}
+
+@media (max-width: 900px) {
+  .appRail { width: 60px; padding: 12px 6px; }
+  .railBrandText, .railLabel { display: none; }
+  .railBrand { padding-bottom: 10px; }
+  main { margin-left: 60px; padding: 14px; }
+  .importSidebar { width: 230px; min-width: 230px; }
+}
+
+@media (max-width: 900px) {
+  .detailSidebar { flex: 0 0 300px; width: 300px; max-width: 44vw; }
+}
+
+@media (max-width: 620px) {
+  .importSidebar { width: 190px; min-width: 190px; }
+  .sidebarBody { padding: 10px 12px 16px; }
+  .detailBody { flex-direction: column; }
+  .detailViewer { flex: 1 1 auto; padding: 14px; }
+  .detailSidebar { flex: 0 0 auto; width: 100%; max-width: none; max-height: 42vh; border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* ---------- 설정 — 가져오기 자동완성 기억 ---------- */
+.memoryEntryList {
+  display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto;
+  margin: 8px 0 14px; padding-right: 4px;
+}
+.memoryEntryList:empty::after { content: '아직 기억된 과목이 없습니다.'; color: var(--muted); font-size: 12px; }
+.memoryEntryRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--bg, #f7f8fb); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px;
+}
+.memoryEntryRow .memoryEntryMain { display: flex; gap: 8px; align-items: baseline; overflow: hidden; }
+.memoryEntryRow .memoryEntrySubject { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.memoryEntryRow .memoryEntryType { color: var(--accent-dark); white-space: nowrap; }
+.memoryEntryRow button {
+  border: none; background: none; color: var(--danger); font-size: 11px; font-weight: 700;
+  cursor: pointer; padding: 2px 6px; white-space: nowrap;
+}
+.memoryActions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.memoryActions input[type="file"] { font-size: 12px; }
+
+/* ---------- 모바일 화면 너비 전반 최적화 (가져오기/라이브러리는 레이아웃만,
+   문제풀이 탭은 전용 풀스크린 뷰어를 이미 모바일 우선으로 만들어둠) ---------- */
+@media (max-width: 600px) {
+  /* 좌측 앱 레일 → 하단 탭바로 전환(엄지로 닿기 쉬운 위치, 휴대폰 화면에서 좌우 공간을 아끼기 위함) */
+  .appRail {
+    position: fixed; top: auto; left: 0; right: 0; bottom: 0; width: 100%; height: 60px;
+    flex-direction: row; align-items: stretch; padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border-right: none; border-top: 1px solid var(--border); gap: 0; z-index: 50; overflow: visible;
+  }
+  .railBrand { display: none; }
+  .railNav { flex-direction: row; flex: 1; gap: 2px; }
+  .tabBtn.railTabBtn { flex: 1; padding: 4px 2px; gap: 2px; }
+  .railIcon { font-size: 18px; }
+  .railLabel { display: block; font-size: 9px; }
+  main { margin-left: 0; margin-bottom: 66px; padding: 12px; }
+
+  /* 가져오기 탭: 사이드바+본문을 세로로 쌓기(작은 화면에서 좌우 분할은 비효율적) */
+  .importLayout { flex-direction: column; min-height: 0; }
+  .importSidebar { width: 100%; min-width: 0; margin-right: 0; margin-bottom: 14px; max-height: none; }
+  .importSidebar.collapsed { width: 100%; min-width: 0; }
+  .reviewToolbar { position: static; }
+  .reviewAreaScroll { max-height: none; }
+
+  /* 라이브러리 상단바/필터바: 한 줄에 욱여넣지 않고 자연스럽게 줄바꿈 + 각 컨트롤 폭 확대 */
+  .libTopBar, .libControlBar { padding: 10px 12px; }
+  .filterBar input, .filterBar select { flex: 1 1 100%; min-width: 0; }
+  .actionBar { gap: 8px; }
+  .libList { height: calc(100vh - 66px - 330px); min-height: 320px; }
+  .papersGrid { grid-template-columns: 1fr; }
+
+  /* 문제풀이 설정 화면: 필터 3열 → 1열, 버튼/입력을 손가락 크기로 */
+  .solveFilterGrid { grid-template-columns: 1fr; }
+  .solveModeOption { padding: 14px 14px; }
+}

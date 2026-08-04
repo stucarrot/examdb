@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>객관식 문제은행 매니저</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="appRail">
+  <div class="railBrand" title="객관식 문제은행 매니저">
+    <span class="railBrandIcon">📚</span>
+    <span class="railBrandText">문제은행<br>매니저</span>
+    <span class="betaTag">BETA</span>
+  </div>
+  <nav class="railNav">
+    <button class="tabBtn railTabBtn active" data-tab="import">
+      <span class="railIcon">📥</span><span class="railLabel">가져오기</span>
+    </button>
+    <button class="tabBtn railTabBtn" data-tab="library">
+      <span class="railIcon">📚</span><span class="railLabel">라이브러리</span>
+    </button>
+    <button class="tabBtn railTabBtn" data-tab="solve">
+      <span class="railIcon">🎯</span><span class="railLabel">문제풀이</span>
+    </button>
+    <button class="tabBtn railTabBtn" data-tab="settings">
+      <span class="railIcon">⚙️</span><span class="railLabel">설정/백업</span>
+    </button>
+  </nav>
+</header>
+
+<main>
+
+  <datalist id="examTypeList">
+    <option value="5급공채"><option value="7급공채"><option value="입법고시">
+    <option value="민경채"><option value="9급공채">
+  </datalist>
+  <datalist id="subjectList">
+    <option value="자료해석"><option value="언어논리"><option value="상황판단">
+    <option value="경제학"><option value="행정법"><option value="행정학"><option value="헌법"><option value="노동법">
+  </datalist>
+
+  <!-- ===================== 가져오기 탭 ===================== -->
+  <section id="tab-import" class="tabPanel active">
+    <div class="importLayout">
+      <aside id="importSidebar" class="importSidebar">
+        <div class="sidebarHead">
+          <h2>PDF 가져오기</h2>
+          <button id="toggleSidebarBtn" class="sidebarToggleBtn" title="사이드바 접기/펼치기">⟨</button>
+        </div>
+        <div id="importSidebarBody" class="sidebarBody">
+          <p class="hint">2단 편집 시험지(PSAT형) 기준으로 문제 번호를 자동 인식해 분할합니다. 여러 PDF를 한 번에 선택하면 아래 목록에 추가되고, 파일마다 제목/과목/연도/책형을 최대한 자동 인식해서 채워줍니다 — 틀리면 목록에서 직접 고치세요.</p>
+
+          <label>PDF 파일 (여러 개 선택 가능)
+            <input type="file" id="pdfFiles" accept="application/pdf" multiple>
+          </label>
+
+          <label>기본 시작 문제번호
+            <input type="number" id="startQnum" value="1" min="1">
+          </label>
+          <label class="checkboxLabel">
+            <input type="checkbox" id="twoColumnChk" checked>
+            2단 편집 시험지입니다
+          </label>
+
+          <details class="advancedDetails">
+            <summary>고급 옵션 (모든 파일에 공통 적용)</summary>
+            <label>머리말 비율
+              <input type="number" id="headerRatio" value="0.06" step="0.01" min="0" max="0.3">
+            </label>
+            <label>꼬리말 비율
+              <input type="number" id="footerRatio" value="0.025" step="0.005" min="0" max="0.3">
+            </label>
+            <label>렌더링 배율
+              <input type="number" id="renderScale" value="1.8" step="0.1" min="1" max="3">
+            </label>
+            <label>문제 끝 판정 여백(줄 수)
+              <input type="number" id="contentGapLines" value="2.2" step="0.1" min="1" max="6">
+            </label>
+          </details>
+
+          <div id="importStatus" class="statusText"></div>
+        </div>
+      </aside>
+
+      <div class="importMain">
+        <!-- ---- 큐(대기열) 목록 화면 ---- -->
+        <div id="batchListView">
+          <div class="batchToolbar">
+            <span id="batchCount">추가된 파일 없음</span>
+            <div class="spacer"></div>
+            <button id="batchAnalyzeAllBtn" class="btnSecondary" disabled>▶ 전체 분석 시작</button>
+            <button id="batchClearDoneBtn" class="btnGhost" disabled>저장 완료 항목 지우기</button>
+            <button id="batchSaveAllBtn" class="btnPrimary" disabled>⇩ 전체 저장</button>
+          </div>
+          <div id="importEmptyState" class="emptyState">왼쪽에서 PDF 파일을 선택해 목록에 추가해주세요. 시험 하나(예: 5급 자료해석/언어논리/상황판단)를 한 번에 여러 개 올릴 수 있습니다.</div>
+          <div id="batchList" class="batchList"></div>
+        </div>
+
+        <!-- ---- 개별 파일 박스 리뷰(편집) 화면 ---- -->
+        <div id="reviewEditView" class="hidden">
+          <div id="reviewToolbar" class="reviewToolbar">
+            <button id="drawBoxBtn" class="btnSecondary">＋ 새 박스 그리기</button>
+            <button id="drawSetBoxBtn" class="btnSecondary">＋ 세트 공통 박스</button>
+            <span class="reviewHelp">박스 드래그=이동, 오른쪽 아래 손잡이=크기조절, 번호칸=문제번호 수정, ×=삭제. 같은 번호의 박스가 여러 개면 한 문제(여러 조각)로 합쳐집니다.</span>
+            <div class="spacer"></div>
+            <div class="zoomControl">
+              <button id="zoomOutBtn" class="btnGhost zoomBtn" title="축소">－</button>
+              <span id="zoomLabel" class="zoomLabel">100%</span>
+              <button id="zoomInBtn" class="btnGhost zoomBtn" title="확대">＋</button>
+              <button id="zoomResetBtn" class="btnGhost zoomBtn" title="100%로">⤾</button>
+            </div>
+            <button id="cancelImportBtn" class="btnGhost">← 목록으로 (변경 취소)</button>
+            <button id="saveAllBtn" class="btnPrimary">✓ 검토 완료 → 목록으로</button>
+          </div>
+          <div id="reviewAreaScroll" class="reviewAreaScroll">
+            <div id="reviewArea" class="reviewArea"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 라이브러리 탭 ===================== -->
+  <section id="tab-library" class="tabPanel">
+    <!-- 상단 바: 문제보기/문제지보기 전환 + (문제보기일 때) 목록형/카드형 전환을 한 줄에 -->
+    <div class="card libTopBar">
+      <div class="libViewSwitch">
+        <button id="libViewQuestionsBtn" class="viewSwitchBtn active">📄 문제 보기</button>
+        <button id="libViewPapersBtn" class="viewSwitchBtn">🗂 문제지 보기</button>
+      </div>
+      <div class="spacer"></div>
+      <div id="libModeBarWrap" class="libModeBar">
+        <span class="libModeBarLabel">보기 방식</span>
+        <button id="libModeListBtn" class="viewSwitchBtn small active">☰ 목록형</button>
+        <button id="libModeCardBtn" class="viewSwitchBtn small">🗃 카드형</button>
+      </div>
+    </div>
+
+    <!-- ---- 문제지(시험) 보기 ---- -->
+    <div id="papersView" class="hidden">
+      <div class="card libControlBar">
+        <div class="filterBar">
+          <input type="text" id="papersSearch" placeholder="검색 (제목/코드)">
+          <select id="papersExamTypeFilter"><option value="">전체 시험유형</option></select>
+          <select id="papersSubjectFilter"><option value="">전체 과목</option></select>
+          <select id="papersYearFilter"><option value="">전체 연도</option></select>
+        </div>
+        <div class="actionBar">
+          <label class="checkboxLabel"><input type="checkbox" id="selectAllPapersChk"> 전체선택</label>
+          <span id="paperSelectionCount">0개 선택됨</span>
+          <span id="papersCount" class="libCount"></span>
+          <div class="spacer"></div>
+          <button id="btnBulkExamMeta" class="btnSecondary" disabled>선택 정보 일괄변경</button>
+          <button id="btnBulkAnswerSheetApply" class="btnSecondary">정답표 일괄 적용(시험/연도별)</button>
+          <button id="btnDeleteSelectedPapers" class="btnDanger" disabled>선택 삭제</button>
+        </div>
+      </div>
+      <div id="papersGrid" class="papersGrid"></div>
+      <div id="papersEmptyState" class="emptyState hidden">아직 가져온 문제지가 없습니다. "가져오기" 탭에서 PDF를 추가해보세요.</div>
+    </div>
+
+    <!-- ---- 개별 문제 보기 ---- -->
+    <div id="questionsView">
+      <!-- 검색/필터 줄 + 선택/일괄작업 줄을 카드 하나로 묶어 상단 공간 절약 -->
+      <div class="card libControlBar">
+        <div class="filterBar">
+          <input type="text" id="libSearch" placeholder="검색 (코드/시험명/과목/번호/태그/메모)">
+          <select id="libExamFilter"><option value="">전체 문제지</option></select>
+          <select id="libExamTypeFilter"><option value="">전체 시험유형</option></select>
+          <select id="libSubjectFilter"><option value="">전체 과목</option></select>
+          <select id="libYearFilter"><option value="">전체 연도</option></select>
+          <select id="libTagFilter"><option value="">전체 태그</option></select>
+          <button id="btnBulkAnswer" class="btnSecondary">정답 일괄 입력</button>
+        </div>
+        <div class="actionBar">
+          <label class="checkboxLabel"><input type="checkbox" id="selectAllChk"> 전체선택</label>
+          <label class="checkboxLabel"><input type="checkbox" id="libAnswerFilterChk"> 정답 미입력만</label>
+          <span id="selectionCount">0개 선택됨</span>
+          <span id="libCount" class="libCount"></span>
+          <div class="spacer"></div>
+          <button id="btnCbtFromSelection" class="btnSecondary">▶ 문제풀이로 보내기</button>
+          <button id="btnExportFromSelection" class="btnSecondary">⇩ PDF로 내보내기</button>
+          <button id="btnBulkMeta" class="btnSecondary">문제정보 일괄변경</button>
+          <button id="btnDeleteSelection" class="btnDanger" disabled>삭제</button>
+        </div>
+      </div>
+
+      <div id="libList" class="libList card">
+        <div id="libListPhantom"></div>
+        <div id="libListInner" class="libListInner"></div>
+        <div id="libEmptyState" class="emptyState hidden">조건에 맞는 문제가 없습니다.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 문제풀이 탭 (모바일 최적화) ===================== -->
+  <section id="tab-solve" class="tabPanel">
+    <div id="solveSetupView" class="solveSetupView">
+      <div id="solveBuildCard" class="card">
+        <h2>문제지 만들기</h2>
+        <p class="hint">조건에 맞는 문제를 골라 문제풀이를 시작하세요. 시험별·과목별·연도별로 좁힐 수 있습니다.</p>
+
+        <div class="solveFilterGrid">
+          <label>시험유형
+            <select id="solveExamTypeFilter"><option value="">전체</option></select>
+          </label>
+          <label>과목
+            <select id="solveSubjectFilter"><option value="">전체</option></select>
+          </label>
+          <label>연도
+            <select id="solveYearFilter"><option value="">전체</option></select>
+          </label>
+        </div>
+
+        <div class="solveModeGroup">
+          <label class="solveModeOption">
+            <input type="radio" name="solveMode" value="all" checked>
+            <span>모두 <b id="solveMatchCount">0</b>개</span>
+          </label>
+          <label class="solveModeOption">
+            <input type="radio" name="solveMode" value="random">
+            <span>랜덤 <input type="number" id="solveRandomCount" value="10" min="1" class="solveInlineNum"> 개</span>
+          </label>
+          <label class="solveModeOption">
+            <input type="radio" name="solveMode" value="pick">
+            <span>직접 고르기 (<b id="solvePickCount">0</b>개 선택됨)</span>
+          </label>
+        </div>
+
+        <div id="solvePickList" class="solvePickList hidden"></div>
+
+        <div class="solveStartRow">
+          <button id="solveStartBtn" class="btnPrimary">▶ 문제풀이 시작</button>
+        </div>
+        <p id="solveSetupStatus" class="statusText"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 설정 탭 ===================== -->
+  <section id="tab-settings" class="tabPanel">
+    <div class="card">
+      <h2>현황</h2>
+      <p>저장된 문제: <b id="statsQuestionCount">0</b>개 · 문제지 수: <b id="statsExamCount">0</b>개</p>
+      <p>브라우저 저장공간: <span id="statsStorage">-</span></p>
+    </div>
+
+    <div class="card">
+      <h2>백업 / 다른 컴퓨터로 이전</h2>
+      <p class="hint">문제 DB는 이 브라우저(이 컴퓨터)에만 저장됩니다. 다른 기기에서도 사용하려면 백업 파일을 내려받은 뒤, 그 기기에서 이 앱을 열어 "불러오기"로 복원하세요.</p>
+      <button id="btnBackup" class="btnPrimary">백업 파일 다운로드 (.json)</button>
+      <div style="margin-top:14px;">
+        <label class="checkboxLabel"><input type="checkbox" id="restoreMerge" checked> 기존 데이터에 합치기 (해제 시 전체 교체)</label><br>
+        <input type="file" id="restoreFile" accept="application/json" style="margin-top:8px;">
+      </div>
+      <div id="backupStatus" class="statusText"></div>
+    </div>
+
+    <div class="card">
+      <h2>가져오기 자동완성 기억</h2>
+      <p class="hint">"가져오기" 탭에서 과목명과 시험유형을 함께 입력해두면 그 조합을 기억해뒀다가,
+        나중에 같은(또는 비슷한) 과목의 파일을 가져올 때 시험유형을 자동으로 채워줍니다.
+        위 전체 백업에도 함께 포함되지만, 문제 이미지 없이 이 기억만 따로 가볍게 백업/이전하고
+        싶을 때 아래를 사용하세요.</p>
+      <p>기억된 과목 수: <b id="memoryEntryCount">0</b>개</p>
+      <div id="memoryEntryList" class="memoryEntryList"></div>
+      <div class="memoryActions">
+        <button id="btnMemoryBackup" class="btnSecondary">기억만 백업 (.json)</button>
+        <label class="checkboxLabel"><input type="checkbox" id="memoryRestoreMerge" checked> 기존 기억에 합치기 (해제 시 전체 교체)</label>
+        <input type="file" id="memoryRestoreFile" accept="application/json">
+        <button id="btnMemoryReset" class="btnDanger">기억 초기화</button>
+      </div>
+      <div id="memoryStatus" class="statusText"></div>
+    </div>
+
+    <div class="card">
+      <h2 class="dangerTitle">위험 구역</h2>
+      <p class="hint">아래 작업은 되돌릴 수 없습니다. 실행 전 위 백업을 먼저 받아두는 것을 권장합니다.</p>
+      <button id="btnClearAll" class="btnDanger">전체 데이터 삭제</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== 문제지 편집 모달 ===================== -->
+<div id="examEditModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>문제지 정보 수정</h2>
+    <p class="hint">수정하면 이 문제지에 속한 모든 문제의 코드가 자동으로 다시 계산됩니다.</p>
+    <label>제목
+      <input type="text" id="examEditTitle">
+    </label>
+    <label>시험 유형
+      <input type="text" id="examEditType" list="examTypeList">
+    </label>
+    <label>연도
+      <input type="text" id="examEditYear">
+    </label>
+    <label>과목
+      <input type="text" id="examEditSubject" list="subjectList">
+    </label>
+    <label>책형/회차
+      <input type="text" id="examEditRound">
+    </label>
+    <div class="codePreviewBox">
+      <div class="codePreviewLabel">문제지 코드</div>
+      <div id="examEditCodePreview" class="codePreview">-</div>
+    </div>
+    <div class="modalActions">
+      <button id="examEditCancel" class="btnGhost">취소</button>
+      <button id="examEditSave" class="btnPrimary">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 상세 편집 패널 (전체화면 뷰어) ===================== -->
+<div id="detailPanel" class="overlay hidden fullscreenOverlay">
+  <div class="detailBox">
+    <div class="detailHeader">
+      <div class="detailTitleWrap">
+        <div class="detailTitleCol">
+          <span id="detailTitle"></span>
+          <span id="detailSubtitle" class="detailSubtitle"></span>
+        </div>
+        <span id="detailNavPos" class="detailNavPos"></span>
+      </div>
+      <div class="spacer"></div>
+      <div class="detailNavQGroup">
+        <button id="detailPrevQBtn" class="btnGhost detailNavQBtn" title="이전 문제 (Page Up)">◀ 이전 문제</button>
+        <button id="detailNextQBtn" class="btnGhost detailNavQBtn" title="다음 문제 (Page Down)">다음 문제 ▶</button>
+      </div>
+      <div class="detailZoomBar">
+        <button id="detailZoomOutBtn" class="btnGhost detailZoomBtn" title="축소 (-)">－</button>
+        <button id="detailZoomLabel" class="btnGhost detailZoomBtn detailZoomLabel" title="100%로 초기화 (0)">100%</button>
+        <button id="detailZoomInBtn" class="btnGhost detailZoomBtn" title="확대 (+)">＋</button>
+      </div>
+      <button id="detailViewToggle" class="btnGhost detailViewToggleBtn hidden">⊞ 한 장씩 보기</button>
+      <button id="detailClose" class="btnGhost">✕ 닫기</button>
+    </div>
+    <div class="detailBody">
+      <div class="detailViewer">
+        <button id="detailPrevBtn" class="detailNavArrow detailNavArrow-prev hidden" title="이전 이미지 (←)">◀</button>
+        <div id="detailImages" class="detailImages"></div>
+        <button id="detailNextBtn" class="detailNavArrow detailNavArrow-next hidden" title="다음 이미지 (→)">▶</button>
+        <div id="detailImageCounter" class="detailImageCounter hidden"></div>
+      </div>
+      <aside class="detailSidebar">
+        <div class="detailForm">
+          <label>태그 (쉼표로 구분)
+            <input type="text" id="detailTags" placeholder="예: 법조문형, 계산형">
+          </label>
+          <label>정답 (1~5)
+            <select id="detailAnswer">
+              <option value="">미입력</option>
+              <option value="1">①</option>
+              <option value="2">②</option>
+              <option value="3">③</option>
+              <option value="4">④</option>
+              <option value="5">⑤</option>
+            </select>
+          </label>
+          <label>해설
+            <textarea id="detailExplanation" rows="8" placeholder="해설을 붙여넣거나 직접 작성하세요."></textarea>
+          </label>
+          <label>메모
+            <textarea id="detailMemo" rows="3" placeholder="개인 메모"></textarea>
+          </label>
+          <div class="detailActions">
+            <button id="detailDelete" class="btnDanger">이 문제 삭제</button>
+            <button id="detailSave" class="btnPrimary">저장</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 선택 문제 정보 일괄 변경 모달 ===================== -->
+<div id="bulkMetaModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>선택한 문제 정보 일괄 변경</h2>
+    <p class="reviewHelp">빈 칸으로 둔 항목은 그대로 둡니다(변경 안 함). 값을 적은 항목만 선택된 모든 문제에 적용됩니다.</p>
+    <label>연도
+      <input type="text" id="bulkMetaYear" placeholder="예: 2022 (비우면 변경 안 함)">
+    </label>
+    <label>시험유형
+      <input type="text" id="bulkMetaExamType" list="examTypeList" placeholder="예: 7급공채 (비우면 변경 안 함)">
+    </label>
+    <label>과목
+      <input type="text" id="bulkMetaSubject" list="subjectList" placeholder="예: 경제학 (비우면 변경 안 함)">
+    </label>
+    <label>태그 (쉼표로 구분)
+      <input type="text" id="bulkMetaTags" placeholder="예: 계산형, 그래프 (비우면 변경 안 함)">
+    </label>
+    <div class="filterBar">
+      <label class="checkboxLabel"><input type="radio" name="bulkMetaTagMode" value="add" checked> 기존 태그에 추가</label>
+      <label class="checkboxLabel"><input type="radio" name="bulkMetaTagMode" value="replace"> 태그 전체 교체</label>
+    </div>
+    <div class="modalActions">
+      <button id="bulkMetaCancel" class="btnGhost">취소</button>
+      <button id="bulkMetaApply" class="btnPrimary">적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 선택 문제지 정보 일괄 변경 모달 ===================== -->
+<div id="bulkExamMetaModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>선택한 문제지 정보 일괄 변경</h2>
+    <p class="reviewHelp">빈 칸으로 둔 항목은 그대로 둡니다(변경 안 함). 값을 적은 항목만 선택된 모든 문제지(및 그 안의 모든 문제)에 적용됩니다.</p>
+    <label>연도
+      <input type="text" id="bulkExamMetaYear" placeholder="예: 2022 (비우면 변경 안 함)">
+    </label>
+    <label>시험유형
+      <input type="text" id="bulkExamMetaType" list="examTypeList" placeholder="예: 7급공채 (비우면 변경 안 함)">
+    </label>
+    <label>과목
+      <input type="text" id="bulkExamMetaSubject" list="subjectList" placeholder="예: 경제학 (비우면 변경 안 함)">
+    </label>
+    <label>책형
+      <input type="text" id="bulkExamMetaRound" placeholder="예: 나 (비우면 변경 안 함)">
+    </label>
+    <div class="modalActions">
+      <button id="bulkExamMetaCancel" class="btnGhost">취소</button>
+      <button id="bulkExamMetaApply" class="btnPrimary">적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 정답 일괄 입력 모달 ===================== -->
+<div id="bulkAnswerModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>정답 일괄 입력</h2>
+    <label>시험 선택
+      <select id="bulkAnswerExam"></select>
+    </label>
+    <label>정답 목록 (한 줄에 "문제번호 정답" — 예: 1 3)
+      <textarea id="bulkAnswerText" rows="10" placeholder="1 3&#10;2 5&#10;3 1&#10;..."></textarea>
+    </label>
+
+    <div class="answerSheetImportBox">
+      <p class="hint" style="margin:0 0 6px;">정답표 첨부 시 과목명·책형·문제번호를 찾아 위 목록을 자동으로 채워줍니다
+        (표 형식 정답표 PDF 또는 이미지, 예: 국가공무원 5·7급 정답표).</p>
+      <div class="answerSheetImportRow">
+        <input type="file" id="bulkAnswerSheetFile" accept=".pdf,image/*">
+        <button id="bulkAnswerSheetAnalyze" class="btnSecondary">정답표에서 자동 인식</button>
+      </div>
+      <div id="bulkAnswerSheetCandidateWrap" class="hidden" style="margin-top:8px;">
+        <label style="margin:0;">인식된 과목 중 선택
+          <select id="bulkAnswerSheetCandidates"></select>
+        </label>
+        <button id="bulkAnswerSheetUseCandidate" class="btnSecondary" style="margin-top:6px;">선택한 결과로 채우기</button>
+      </div>
+      <p id="bulkAnswerSheetStatus" class="statusText"></p>
+    </div>
+
+    <div class="modalActions">
+      <button id="bulkAnswerCancel" class="btnGhost">취소</button>
+      <button id="bulkAnswerApply" class="btnPrimary">적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 정답표 일괄 적용(시험/연도별) 모달 ===================== -->
+<div id="bulkAnswerSheetApplyModal" class="overlay hidden">
+  <div class="modalBox" style="max-width:640px;">
+    <h2>정답표 일괄 적용 (시험/연도별)</h2>
+    <p class="hint" style="margin:0;">선택한 시험유형·연도에 속한 모든 문제지를 대상으로, 정답표 PDF/이미지 한 장에서
+      과목명·책형이 일치하는 행을 찾아 정답을 한 번에 반영합니다. 여러 과목 문제지를 한 번에 가져온 경우
+      정답표 하나만 첨부하면 됩니다.</p>
+    <label>시험유형
+      <select id="bulkApplyExamType"></select>
+    </label>
+    <label>연도
+      <select id="bulkApplyYear"></select>
+    </label>
+    <div class="answerSheetImportBox">
+      <div class="answerSheetImportRow">
+        <input type="file" id="bulkApplyFile" accept=".pdf,image/*">
+        <button id="bulkApplyAnalyze" class="btnSecondary">정답표 분석</button>
+      </div>
+      <p id="bulkApplyStatus" class="statusText"></p>
+    </div>
+    <div id="bulkApplyPreviewWrap" class="hidden">
+      <div id="bulkApplyPreviewList" class="bulkApplyPreviewList"></div>
+    </div>
+    <div class="modalActions">
+      <span id="bulkApplyResultStatus" class="statusText"></span>
+      <button id="bulkApplyCancel" class="btnGhost">취소</button>
+      <button id="bulkApplyRun" class="btnPrimary" disabled>일괄 적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== PDF 내보내기 모달 ===================== -->
+<div id="exportModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>PDF로 내보내기</h2>
+    <p id="exportCount" class="hint"></p>
+    <label>제목
+      <input type="text" id="exportTitle" placeholder="예: 자료해석 오답노트">
+    </label>
+    <label>정렬 방식
+      <select id="exportOrder">
+        <option value="selection">선택한 순서 그대로</option>
+        <option value="qnum">문제번호 순</option>
+        <option value="exam-qnum">시험명 → 문제번호 순</option>
+      </select>
+    </label>
+    <label class="checkboxLabel"><input type="checkbox" id="exportAnswerChk"> 맨 뒤에 정답 요약 페이지 포함</label>
+    <div class="exportInlineOptionsRow">
+      <label class="checkboxLabel"><input type="checkbox" id="exportInlineAnswerChk"> 각 문제 끝에 정답 표시(회색 글씨)</label>
+      <label class="checkboxLabel"><input type="checkbox" id="exportInlineIdChk"> 문제 ID 표시(회색 글씨)</label>
+    </div>
+    <p class="hint" style="margin:2px 0 0;">두 옵션을 함께 켜면 문제 아래에 한 줄로 같이 표시되어 공간을 덜 차지합니다.</p>
+    <div class="modalActions">
+      <span id="exportStatus" class="statusText"></span>
+      <button id="exportCancel" class="btnGhost">취소</button>
+      <button id="exportRun" class="btnPrimary">내보내기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 문제풀이 뷰어 (모바일 최적화 풀스크린) ===================== -->
+<div id="solveOverlay" class="overlay hidden solveOverlay">
+  <div class="solveBox">
+
+    <!-- ---- 풀이 화면 ---- -->
+    <div id="solvePlay" class="solvePlay">
+      <div class="solveTopBar">
+        <button id="solveExitBtn" class="solveIconBtn" title="나가기 (이어서 풀 수 있게 저장됨)">✕</button>
+        <div class="solveTopMeta">
+          <span id="solveMetaCode" class="solveMetaCode"></span>
+          <span id="solveMetaSub" class="solveMetaSub"></span>
+        </div>
+        <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
+        <button id="solveGradeBtn" class="btnPrimary solveGradeBtn">채점</button>
+      </div>
+
+      <div id="solveImageArea" class="solveImageArea"></div>
+
+      <div id="solveAnswerPanel" class="solveAnswerPanel hidden"></div>
+
+      <div id="solveChoiceRow" class="solveChoiceRow"></div>
+
+      <div class="solveBottomBar">
+        <button id="solvePrevBtn" class="solveNavBtn">◀ 이전</button>
+        <div class="solveProgressWrap">
+          <div class="solveProgressBarBg"><div id="solveProgressBarFill" class="solveProgressBarFill"></div></div>
+          <span id="solveProgressLabel" class="solveProgressLabel">1 / 1</span>
+        </div>
+        <button id="solveRevealBtn" class="solveNavBtn">정답보기</button>
+        <button id="solveNextBtn" class="solveNavBtn">다음 ▶</button>
+      </div>
+    </div>
+
+    <!-- ---- 결과 화면 ---- -->
+    <div id="solveResult" class="solveResult hidden">
+      <div class="solveResultHead">
+        <h2>결과</h2>
+        <button id="solveResultCloseBtn" class="solveIconBtn" title="닫기">✕</button>
+      </div>
+      <div class="solveResultBody">
+        <div class="solveScoreCircle"><span id="solveScoreText">-</span></div>
+        <p id="solveScoreLine" class="solveScoreLine"></p>
+        <div id="solveSubjectBreakdown" class="solveSubjectBreakdown"></div>
+        <div id="solveResultList" class="solveResultList"></div>
+      </div>
+      <div class="solveResultActions">
+        <button id="solveRetryWrongBtn" class="btnSecondary">틀린 문제만 다시 풀기</button>
+        <button id="solveNewBtn" class="btnPrimary">새 문제풀이 시작</button>
+      </div>
+    </div>
+
+    <!-- ---- 스와이프 사이드바(문제 목록) ---- -->
+    <div id="solveDrawerBackdrop" class="solveDrawerBackdrop hidden"></div>
+    <div id="solveDrawer" class="solveDrawer">
+      <div class="solveDrawerHead">
+        <span>문제 목록</span>
+        <button id="solveDrawerClose" class="solveIconBtn">✕</button>
+      </div>
+      <div id="solveDrawerGrid" class="solveDrawerGrid"></div>
+      <div class="solveDrawerFoot">
+        <button id="solveDrawerNewBtn" class="btnGhost solveDrawerNewBtn">↺ 새 문제풀이 만들기</button>
+      </div>
+    </div>
+    <div class="solveDrawerEdgeHint"></div>
+  </div>
+</div>
+
+<!-- 라이브러리(pdf.js, pdf-lib) — CDN, 무료 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+
+<script src="js/db.js"></script>
+<script src="js/pdfAnalyze.js"></script>
+<script src="js/tagger.js"></script>
+<script src="js/importMemory.js"></script>
+<script src="js/importUI.js"></script>
+<script src="js/answerSheetImport.js"></script>
+<script src="js/library.js"></script>
+<script src="js/solve.js"></script>
+<script src="js/exportPdf.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
