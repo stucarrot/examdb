@@ -458,6 +458,44 @@ textarea { resize: vertical; }
 .bulkApplyIncludeCheck { margin: 0; flex: 0 0 auto; }
 .bulkApplyPreviewTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bulkApplyPreviewRow select { max-width: 220px; font-size: 12px; }
+
+/* ---- 태그 관리 모달 ---- */
+.tagMgrModalBox { max-width: 720px; }
+.linkBtn {
+  border: none; background: none; color: var(--accent, #3b6fe0); font-size: 12px; font-weight: 600;
+  cursor: pointer; padding: 0; margin-left: 8px;
+}
+.linkBtn:hover { text-decoration: underline; }
+.tagMgrFilterCols { display: flex; gap: 14px; flex-wrap: wrap; }
+.tagMgrFilterCol { flex: 1 1 220px; min-width: 200px; }
+.tagMgrFilterLabel {
+  font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.tagMgrCheckList {
+  max-height: 140px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px 10px; display: flex; flex-direction: column; gap: 4px;
+}
+.tagMgrCheckList label {
+  flex-direction: row !important; align-items: center; gap: 6px !important; font-weight: 500 !important;
+  font-size: 13px; color: var(--text, #1a1c26) !important; cursor: pointer;
+}
+.tagMgrCheckList .emptyHint { color: var(--muted); font-size: 12px; padding: 4px 0; }
+.tagMgrList {
+  max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px;
+  display: flex; flex-direction: column;
+}
+.tagMgrRow {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.tagMgrRow:last-child { border-bottom: none; }
+.tagMgrRowName { font-weight: 600; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tagMgrRowCount { color: var(--muted); font-size: 12px; flex: 0 0 auto; }
+.tagMgrRowActions { display: flex; gap: 6px; flex: 0 0 auto; }
+.tagMgrRowActions button { font-size: 12px; padding: 5px 9px; }
+.tagMgrRenameInput { flex: 1 1 auto; min-width: 0; font-size: 13px; padding: 5px 8px; }
+.tagMgrEmpty { padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
 .bulkApplyBadge { font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; font-weight: 600; }
 .bulkApplyBadge.ok { background: #e2f6ea; color: #1e7f43; }
 .bulkApplyBadge.warn { background: #fff3d6; color: #9a6b00; }

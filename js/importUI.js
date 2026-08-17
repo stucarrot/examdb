@@ -173,7 +173,7 @@ const ImportUI = (() => {
     if (item._examTypeFromMemory) {
       const memBadge = document.createElement('span');
       memBadge.className = 'batchRowMemoryBadge';
-      memBadge.textContent = '🧠 기억된 시험유형 자동입력';
+      memBadge.textContent = '기억된 시험유형 자동입력';
       memBadge.title = '이전에 같은 과목에 직접 입력했던 시험유형을 기억해서 채웠습니다. 다르면 직접 수정해주세요.';
       row.appendChild(memBadge);
     }

@@ -50,7 +50,7 @@
           <button id="toggleSidebarBtn" class="sidebarToggleBtn" title="사이드바 접기/펼치기">⟨</button>
         </div>
         <div id="importSidebarBody" class="sidebarBody">
-          <p class="hint">2단 편집 시험지(PSAT형) 기준으로 문제 번호를 자동 인식해 분할합니다. 여러 PDF를 한 번에 선택하면 아래 목록에 추가되고, 파일마다 제목/과목/연도/책형을 최대한 자동 인식해서 채워줍니다 — 틀리면 목록에서 직접 고치세요.</p>
+          <p class="hint">2단 편집 시험지 기준으로 문제 번호를 자동 인식해 분할합니다. 여러 PDF를 한 번에 선택하면 아래 목록에 추가되고, 파일마다 제목/과목/연도/책형을 최대한 자동 인식해서 채워줍니다 — 틀리면 목록에서 직접 고치세요.</p>
 
           <label>PDF 파일 (여러 개 선택 가능)
             <input type="file" id="pdfFiles" accept="application/pdf" multiple>
@@ -94,7 +94,7 @@
             <button id="batchClearDoneBtn" class="btnGhost" disabled>저장 완료 항목 지우기</button>
             <button id="batchSaveAllBtn" class="btnPrimary" disabled>⇩ 전체 저장</button>
           </div>
-          <div id="importEmptyState" class="emptyState">왼쪽에서 PDF 파일을 선택해 목록에 추가해주세요. 시험 하나(예: 5급 자료해석/언어논리/상황판단)를 한 번에 여러 개 올릴 수 있습니다.</div>
+          <div id="importEmptyState" class="emptyState">왼쪽에서 PDF 파일을 선택해 목록에 추가해주세요. 시험 하나를 한 번에 여러 개 올릴 수 있습니다.</div>
           <div id="batchList" class="batchList"></div>
         </div>
 
@@ -173,6 +173,7 @@
           <select id="libYearFilter"><option value="">전체 연도</option></select>
           <select id="libTagFilter"><option value="">전체 태그</option></select>
           <button id="btnBulkAnswer" class="btnSecondary">정답 일괄 입력</button>
+          <button id="btnTagManager" class="btnSecondary">🏷 태그 관리</button>
         </div>
         <div class="actionBar">
           <label class="checkboxLabel"><input type="checkbox" id="selectAllChk"> 전체선택</label>
@@ -442,7 +443,7 @@
 
     <div class="answerSheetImportBox">
       <p class="hint" style="margin:0 0 6px;">정답표 첨부 시 과목명·책형·문제번호를 찾아 위 목록을 자동으로 채워줍니다
-        (표 형식 정답표 PDF 또는 이미지, 예: 국가공무원 5·7급 정답표).</p>
+        (표 형식 정답표 PDF 또는 이미지).</p>
       <div class="answerSheetImportRow">
         <input type="file" id="bulkAnswerSheetFile" accept=".pdf,image/*">
         <button id="bulkAnswerSheetAnalyze" class="btnSecondary">정답표에서 자동 인식</button>
@@ -490,6 +491,32 @@
       <span id="bulkApplyResultStatus" class="statusText"></span>
       <button id="bulkApplyCancel" class="btnGhost">취소</button>
       <button id="bulkApplyRun" class="btnPrimary" disabled>일괄 적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 태그 관리 모달 ===================== -->
+<div id="tagManagerModal" class="overlay hidden">
+  <div class="modalBox tagMgrModalBox">
+    <h2>태그 관리</h2>
+    <p class="reviewHelp">시험유형·과목을 체크해서 범위를 좁히면(다중 선택 가능, 아무것도 안 고르면 전체) 그 안에서만 쓰인 태그와 개수를 볼 수 있습니다. 이름변경/삭제는 <b>현재 필터에 걸린 문제에 한해</b> 적용됩니다.</p>
+    <div class="filterBar">
+      <input type="text" id="tagMgrSearch" placeholder="태그 이름 검색">
+    </div>
+    <div class="tagMgrFilterCols">
+      <div class="tagMgrFilterCol">
+        <div class="tagMgrFilterLabel">시험유형 <button type="button" id="tagMgrExamTypeClear" class="linkBtn">전체해제</button></div>
+        <div id="tagMgrExamTypeList" class="tagMgrCheckList"></div>
+      </div>
+      <div class="tagMgrFilterCol">
+        <div class="tagMgrFilterLabel">과목 <button type="button" id="tagMgrSubjectClear" class="linkBtn">전체해제</button></div>
+        <div id="tagMgrSubjectList" class="tagMgrCheckList"></div>
+      </div>
+    </div>
+    <div id="tagMgrSummary" class="hint"></div>
+    <div id="tagMgrList" class="tagMgrList"></div>
+    <div class="modalActions">
+      <button id="tagMgrClose" class="btnGhost">닫기</button>
     </div>
   </div>
 </div>

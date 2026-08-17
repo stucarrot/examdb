@@ -111,6 +111,17 @@ const LibraryUI = (() => {
     });
     el('#bulkMetaApply').addEventListener('click', applyBulkMeta);
     el('#btnBulkAnswer').addEventListener('click', () => openBulkAnswerModal());
+    el('#btnTagManager').addEventListener('click', openTagManager);
+    el('#tagMgrClose').addEventListener('click', () => el('#tagManagerModal').classList.add('hidden'));
+    el('#tagMgrSearch').addEventListener('input', debounce(renderTagManagerList, 120));
+    el('#tagMgrExamTypeClear').addEventListener('click', () => {
+      elAll('#tagMgrExamTypeList input[type="checkbox"]').forEach((c) => { c.checked = false; });
+      renderTagManagerList();
+    });
+    el('#tagMgrSubjectClear').addEventListener('click', () => {
+      elAll('#tagMgrSubjectList input[type="checkbox"]').forEach((c) => { c.checked = false; });
+      renderTagManagerList();
+    });
     el('#bulkAnswerCancel').addEventListener('click', () => el('#bulkAnswerModal').classList.add('hidden'));
     el('#bulkAnswerApply').addEventListener('click', applyBulkAnswers);
 
@@ -816,14 +827,34 @@ const LibraryUI = (() => {
 
   async function saveDetail() {
     if (!currentDetailId) return;
-    const q = await DB.getQuestion(currentDetailId);
+    const id = currentDetailId;
+    const q = await DB.getQuestion(id);
     q.tags = el('#detailTags').value.split(',').map((s) => s.trim()).filter(Boolean);
     q.answer = el('#detailAnswer').value.trim();
     q.explanation = el('#detailExplanation').value;
     q.memo = el('#detailMemo').value;
     await DB.updateQuestion(q);
-    closeDetail();
     await refresh();
+    // 뷰어는 닫지 않고 그대로 열어둔 채, 새로고침된 목록에서 같은 문제를 다시 찾아
+    // detailNavList/detailNavIndex를 최신 상태로 맞춰준다(이전/다음 이동이 새 데이터 기준으로 동작하도록).
+    if (currentDetailId === id) {
+      detailNavList = filtered.some((item) => item.id === id) ? filtered : detailNavList;
+      detailNavIndex = detailNavList.findIndex((item) => item.id === id);
+      updateDetailNav();
+      flashSaved();
+    }
+  }
+
+  let savedFlashTimer = null;
+  /** 저장 버튼 옆에 "저장됨" 표시를 잠깐 띄웠다 사라지게 한다(뷰어가 안 닫히니 저장됐다는 피드백이 필요) */
+  function flashSaved() {
+    const btn = el('#detailSave');
+    if (!btn) return;
+    clearTimeout(savedFlashTimer);
+    const original = btn.dataset.origText || btn.textContent;
+    btn.dataset.origText = original;
+    btn.textContent = '저장됨 ✓';
+    savedFlashTimer = setTimeout(() => { btn.textContent = original; }, 1200);
   }
 
   async function deleteDetail() {
@@ -1106,6 +1137,150 @@ const LibraryUI = (() => {
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ==================== 태그 관리 모달 ====================
+  // fullList(전체 문제) 기준으로 동작한다(라이브러리 메인 필터와는 독립적인 별도 스코프).
+  // 시험유형/과목 체크박스로 문제 범위를 좁히고, 그 범위 안에서 실제 쓰이는 태그+개수를
+  // 계산해서 보여준다. 이름변경/삭제는 항상 "현재 이 모달의 필터에 걸린 문제들"에만 적용된다.
+
+  function openTagManager() {
+    renderTagManagerFilters();
+    renderTagManagerList();
+    el('#tagManagerModal').classList.remove('hidden');
+  }
+
+  /** 시험유형/과목 체크박스 목록을 fullList 기준 고유값으로 채운다(이미 체크된 값은 유지) */
+  function renderTagManagerFilters() {
+    const examTypeValues = Array.from(new Set(fullList.map((q) => q.examType))).filter(Boolean).sort();
+    const subjectValues = Array.from(new Set(fullList.map((q) => q.subject))).filter(Boolean).sort();
+
+    const buildList = (containerSel, values) => {
+      const container = el(containerSel);
+      const prevChecked = new Set(elAll('input[type="checkbox"]', container).filter((c) => c.checked).map((c) => c.value));
+      if (!values.length) {
+        container.innerHTML = '<div class="emptyHint">값 없음</div>';
+        return;
+      }
+      container.innerHTML = values.map((v) => `
+        <label><input type="checkbox" value="${escapeHtml(v)}" ${prevChecked.has(v) ? 'checked' : ''}> ${escapeHtml(v)}</label>
+      `).join('');
+      elAll('input[type="checkbox"]', container).forEach((c) => c.addEventListener('change', renderTagManagerList));
+    };
+    buildList('#tagMgrExamTypeList', examTypeValues);
+    buildList('#tagMgrSubjectList', subjectValues);
+  }
+
+  /** 현재 체크된 시험유형/과목(다중 선택, 각 항목 안에서는 OR / 항목 간에는 AND)에 맞는 문제들만 반환 */
+  function tagMgrFilteredQuestions() {
+    const checkedExamTypes = elAll('#tagMgrExamTypeList input[type="checkbox"]:checked').map((c) => c.value);
+    const checkedSubjects = elAll('#tagMgrSubjectList input[type="checkbox"]:checked').map((c) => c.value);
+    return fullList.filter((q) => {
+      if (checkedExamTypes.length && !checkedExamTypes.includes(q.examType)) return false;
+      if (checkedSubjects.length && !checkedSubjects.includes(q.subject)) return false;
+      return true;
+    });
+  }
+
+  function renderTagManagerList() {
+    const scoped = tagMgrFilteredQuestions();
+    const search = el('#tagMgrSearch').value.trim().toLowerCase();
+
+    const counts = new Map(); // tag -> count
+    scoped.forEach((q) => (q.tags || []).forEach((t) => counts.set(t, (counts.get(t) || 0) + 1)));
+
+    let tags = Array.from(counts.keys()).sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b));
+    if (search) tags = tags.filter((t) => t.toLowerCase().includes(search));
+
+    el('#tagMgrSummary').textContent = `범위 내 문제 ${scoped.length}개 · 태그 ${tags.length}종`;
+
+    const listEl = el('#tagMgrList');
+    if (!tags.length) {
+      listEl.innerHTML = '<div class="tagMgrEmpty">해당 범위에 태그가 없습니다.</div>';
+      return;
+    }
+    listEl.innerHTML = tags.map((t) => `
+      <div class="tagMgrRow" data-tag="${escapeHtml(t)}">
+        <span class="tagMgrRowName">${escapeHtml(t)}</span>
+        <span class="tagMgrRowCount">${counts.get(t)}개 문제</span>
+        <div class="tagMgrRowActions">
+          <button type="button" class="btnSecondary tagMgrRenameBtn">이름변경</button>
+          <button type="button" class="btnDanger tagMgrDeleteBtn">삭제</button>
+        </div>
+      </div>
+    `).join('');
+
+    elAll('.tagMgrRenameBtn', listEl).forEach((btn) => {
+      btn.addEventListener('click', () => beginTagRename(btn.closest('.tagMgrRow')));
+    });
+    elAll('.tagMgrDeleteBtn', listEl).forEach((btn) => {
+      btn.addEventListener('click', () => tagMgrDeleteTag(btn.closest('.tagMgrRow').dataset.tag));
+    });
+  }
+
+  /** 태그 행을 "이름변경" 모드로 바꿔 인라인 입력창 + 저장/취소 버튼을 보여준다 */
+  function beginTagRename(row) {
+    if (!row) return;
+    const oldTag = row.dataset.tag;
+    row.innerHTML = `
+      <input type="text" class="tagMgrRenameInput" value="${escapeHtml(oldTag)}">
+      <div class="tagMgrRowActions">
+        <button type="button" class="btnGhost tagMgrRenameCancelBtn">취소</button>
+        <button type="button" class="btnPrimary tagMgrRenameSaveBtn">저장</button>
+      </div>
+    `;
+    const input = row.querySelector('.tagMgrRenameInput');
+    input.focus();
+    input.select();
+    const commit = () => tagMgrRenameTag(oldTag, input.value.trim());
+    row.querySelector('.tagMgrRenameSaveBtn').addEventListener('click', commit);
+    row.querySelector('.tagMgrRenameCancelBtn').addEventListener('click', renderTagManagerList);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); renderTagManagerList(); }
+    });
+  }
+
+  /**
+   * 현재 태그관리 필터 범위 안의 문제들에 대해서만 oldTag → newTag로 이름을 바꾼다.
+   * newTag가 그 문제에 이미 있는 다른 태그와 같아지면 자연스럽게 병합(중복 제거)된다.
+   * newTag가 빈 값이면 사실상 삭제와 동일하게 처리(안내 후 진행).
+   */
+  async function tagMgrRenameTag(oldTag, newTag) {
+    if (newTag === oldTag) { renderTagManagerList(); return; }
+    if (!newTag) {
+      if (!confirm(`새 이름이 비어있습니다. "${oldTag}" 태그를 삭제할까요?`)) { renderTagManagerList(); return; }
+      await tagMgrDeleteTag(oldTag);
+      return;
+    }
+    const scoped = tagMgrFilteredQuestions().filter((q) => (q.tags || []).includes(oldTag));
+    if (!scoped.length) { renderTagManagerList(); return; }
+    if (!confirm(`"${oldTag}" → "${newTag}"(으)로 ${scoped.length}개 문제에서 이름을 바꿀까요?`)) { renderTagManagerList(); return; }
+    for (const item of scoped) {
+      const q = await DB.getQuestion(item.id);
+      if (!q) continue;
+      q.tags = Array.from(new Set((q.tags || []).map((t) => (t === oldTag ? newTag : t))));
+      await DB.updateQuestion(q);
+    }
+    await refresh();
+    renderTagManagerFilters();
+    renderTagManagerList();
+  }
+
+  /** 현재 태그관리 필터 범위 안의 문제들에서만 해당 태그를 제거한다(문제 자체는 삭제하지 않음) */
+  async function tagMgrDeleteTag(tag) {
+    const scoped = tagMgrFilteredQuestions().filter((q) => (q.tags || []).includes(tag));
+    if (!scoped.length) return;
+    if (!confirm(`"${tag}" 태그를 ${scoped.length}개 문제에서 제거할까요? (문제 자체는 삭제되지 않습니다)`)) return;
+    for (const item of scoped) {
+      const q = await DB.getQuestion(item.id);
+      if (!q) continue;
+      q.tags = (q.tags || []).filter((t) => t !== tag);
+      await DB.updateQuestion(q);
+    }
+    await refresh();
+    renderTagManagerFilters();
+    renderTagManagerList();
   }
 
   return { init, refresh, onShow };
