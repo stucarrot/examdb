@@ -638,6 +638,8 @@ const ImportUI = (() => {
   // ==================== 전체 저장(DB 커밋) ====================
 
   async function saveItemToDB(item) {
+    const extractChoices = el('#extractChoicesChk').checked;
+    let choicesSaved = 0;
     const exam = await DB.addExam({
       title: item.examMeta.title,
       examType: item.examMeta.examType,
@@ -685,6 +687,19 @@ const ImportUI = (() => {
       const tags = Tagger.suggestTags(exam.subject, stemText);
       if (hasSetIntro) tags.push('세트문제');
 
+      // ---- 설문(발문)/선지 텍스트 — "선지만 추출" 체크박스와 무관하게 항상 계산 ----
+      // combinedText는 박스 전체(발문+선지) 텍스트를 이어붙인 것(세트 공통지문(setIntro)
+      // 조각은 선지를 안 담고 있으므로 제외). 이 중 첫 원문자 마커 이전이 발문이다.
+      // searchText는 "설문이나 선지 텍스트로 문제 검색"에 쓰는 통합 검색용 필드 —
+      // 발문+선지 텍스트가 전부 들어있으므로, "선지 텍스트도 함께 추출" 체크박스를
+      // 꺼둬서 choices 스토어에 개별 레코드가 안 만들어진 경우에도 검색만큼은 항상 된다.
+      const combinedText = parts
+        .filter((p) => p.kind !== 'setIntro')
+        .map((p) => p.fullText || '')
+        .join(' ');
+      const stemFullText = PDFAnalyze.extractStem(combinedText);
+      const searchText = combinedText.replace(/\s+/g, ' ').trim();
+
       const question = {
         id: DB.uid('q'),
         examId: exam.id,
@@ -701,13 +716,54 @@ const ImportUI = (() => {
         explanation: '',
         memo: '',
         thumb,
+        stemFullText,
+        searchText,
+        hasTextChoices: false, // 아래서 선지 추출에 성공하면(마커 2개 이상) true로 덮어씀
         createdAt: Date.now(),
       };
+
+      // ---- 선지만 추출(텍스트) — 사이드바 "선지 텍스트도 함께 추출" 체크박스 ----
+      // 마커가 2개 미만으로 잡히면(선지가 표/그래프 이미지인 문제) splitChoices가
+      // 빈 배열을 반환하므로 자동으로 건너뛰어지고, hasTextChoices도 false로 남는다
+      // — "설문+선지 전부 텍스트일 때만 텍스트 보기/풀기 토글을 보여준다"는 기준이
+      // 자연히 지켜진다(문제 뷰어/문제풀이 쪽에서 이 플래그로 토글 노출 여부를 정함).
+      let choiceRecords = null;
+      if (extractChoices) {
+        const found = PDFAnalyze.splitChoices(combinedText);
+        if (found.length) {
+          question.hasTextChoices = true;
+          choiceRecords = found.map((c) => ({
+            id: DB.uid('c'),
+            questionId: question.id,
+            examId: exam.id,
+            examTitle: exam.title,
+            examType: exam.examType,
+            examYear: exam.year,
+            subject: exam.subject,
+            round: exam.round,
+            qnum: qn,
+            questionCode: question.code,
+            code: `${question.code}_${c.marker}`,
+            marker: c.marker,
+            markerIndex: c.index,
+            text: c.text,
+            tags: question.tags.slice(), // "태그(기존활용)": 소속 문제의 태그를 기본값으로 물려받아 시작
+            ox: null, // 'O' | 'X' | null(미정) — 라이브러리 "선지 보기"에서 체크
+            memo: '',
+            createdAt: Date.now(),
+          }));
+        }
+      }
       await DB.addQuestion(question, blobs);
+      if (choiceRecords) {
+        await DB.addChoices(choiceRecords);
+        choicesSaved += choiceRecords.length;
+      }
+
       saved++;
       el('#importStatus').textContent = `[${item.fileName}] 저장 중… (${saved}/${qnums.length})`;
     }
-    return { examTitle: exam.title, code: exam.code, count: saved };
+    return { examTitle: exam.title, code: exam.code, count: saved, choicesSaved };
   }
 
   async function onSaveAllBatch() {
@@ -727,7 +783,7 @@ const ImportUI = (() => {
       try {
         const r = await saveItemToDB(item);
         item.status = 'saved';
-        results.push(`"${r.examTitle}" (${r.code}) — ${r.count}문제`);
+        results.push(`"${r.examTitle}" (${r.code}) — ${r.count}문제` + (r.choicesSaved ? ` (선지 ${r.choicesSaved}개 추출)` : ''));
       } catch (err) {
         console.error(err);
         item.status = 'error';

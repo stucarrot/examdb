@@ -228,6 +228,16 @@ const PDFAnalyze = (() => {
           return lines.filter((l) => l.y >= y1 && l.y <= stemLimit).map((l) => l.text).join(' ').slice(0, 200);
         };
 
+        // stemText(발문 앞부분 200자, 태그 추천용)와 달리, 이건 박스 구간
+        // [y1,y2) 전체의 텍스트(발문+선택지 전부)를 잘라내지 않고 그대로
+        // 이어붙인 것 — "선지만 추출" 기능(splitChoices)이 ①~⑤ 마커를
+        // 기준으로 이 텍스트를 자르는 데 쓴다. 박스의 y2 자체가 이미
+        // 픽셀 기반 "끝" 판정으로 정해져 있으므로, 여기서 별도로 끝을
+        // 다시 판단할 필요 없이 그 범위 안 텍스트를 그대로 쓰면 된다.
+        const fullTextFor = (y1, y2) => {
+          return lines.filter((l) => l.y >= y1 && l.y <= y2).map((l) => l.text).join(' ');
+        };
+
         // 이 컬럼에서 "마지막 선택지"(lastChoiceChar: 4지선다면 ④, 5지선다면
         // ⑤)가 포함된 줄들의 y좌표 (텍스트 기반 게이트용)
         const lastMarkerYs = lines.filter((l) => l.text.includes(lastChoiceChar)).map((l) => l.y);
@@ -288,6 +298,7 @@ const PDFAnalyze = (() => {
               isOverflowPart: true,
               partIndex: pendingContinuation.partIndex,
               stemText: '',
+              fullText: fullTextFor(contStart, y2),
             });
             if (hadGap || boundaries.length > 0) {
               pendingContinuation = null;
@@ -333,6 +344,7 @@ const PDFAnalyze = (() => {
             isOverflowPart: overflow,
             partIndex: 1,
             stemText: stemTextFor(y1, y2),
+            fullText: fullTextFor(y1, y2),
           };
           allBoxes.push(box);
 
@@ -656,7 +668,85 @@ const PDFAnalyze = (() => {
     return c.toDataURL('image/jpeg', 0.6);
   }
 
-  return { analyze, detectHeader, cropToBlob, cropToThumbDataURL };
+  // 원문자(circled digit) 선택지 마커. ⑩ 이상(드묾)은 다루지 않는다 — 시험
+  // 문제 선택지는 사실상 항상 4개 또는 5개이기 때문에 ①~⑨까지만 봐도 충분.
+  const CHOICE_MARKERS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+
+  /**
+   * "선지만 추출" 기능의 핵심: 문제 박스 텍스트(발문+선택지 전체가 이어붙은
+   * 문자열, box.fullText들을 합친 것)에서 ①②③④⑤ 같은 원문자를 기준으로
+   * 나눠 각 선지의 텍스트만 뽑아낸다. 요청대로 "대충 원숫자 기호 기준"
+   * 알고리즘 — 문자열을 마커로 split하면 [발문, 마커1, 선지1텍스트,
+   * 마커2, 선지2텍스트, ...] 형태가 되므로 마커 뒤의 텍스트를 그 마커의
+   * 선지로 삼는다.
+   *
+   * "맨 끝 선지 끊기"(예: ⑤ 다음에 다음 문제 발문이나 여백 없이 바로 다른
+   * 텍스트가 이어지는 문제)는 별도 처리가 필요 없다 — 애초에 이 text
+   * 자체가 pdfAnalyze의 픽셀 기반 "문제 끝" 판정(findContentEndPx)으로
+   * 이미 잘려 있는 박스 범위(box.fullText)에서만 만들어지므로, 마지막
+   * 마커 이후의 텍스트는 자연히 그 문제의 끝까지만 포함된다. 다음 문제의
+   * 발문이 섞여 들어올 일이 없다.
+   *
+   * @param {string} text
+   * @returns {Array<{marker:string, index:number, text:string}>} 순서대로,
+   *   marker가 하나도 없거나 1개뿐이면(선지가 이미지/표라 텍스트로 못 잡은
+   *   경우) 빈 배열을 반환한다 — 호출부에서 "텍스트 선지가 있는 문제만"
+   *   골라 저장하도록.
+   */
+  function splitChoices(text) {
+    if (!text) return [];
+    const re = /([①②③④⑤⑥⑦⑧⑨])/;
+    const parts = text.split(re);
+    if (parts.length < 3) return []; // 마커가 하나도 안 잡힘
+    const choices = [];
+    for (let i = 1; i < parts.length; i += 2) {
+      const marker = parts[i];
+      const body = (parts[i + 1] || '').replace(/\s+/g, ' ').trim();
+      if (!body) continue;
+      choices.push({ marker, index: CHOICE_MARKERS.indexOf(marker) + 1, text: body });
+    }
+    // 마커가 2개 미만이면(예: 본문 중 우연히 등장한 원문자 하나) 실제
+    // 선택지 목록이 아닐 가능성이 높으므로 버린다.
+    return choices.length >= 2 ? choices : [];
+  }
+
+  /**
+   * 문제 텍스트에서 첫 원문자 마커 이전 부분(=발문/설문)만 뽑아낸다. "선지만
+   * 추출"과 쌍을 이루는 기능 — 이번엔 반대로 선지를 뺀 나머지(발문)만 필요할
+   * 때 쓴다(문제 검색, 텍스트로 문제 보기/풀기 등). splitChoices와 마찬가지로
+   * 마커가 아예 없으면(순수 서술형이거나 인식 실패) 텍스트 전체를 그대로
+   * 반환한다 — 그래도 검색에는 쓸 수 있으므로 무리 없다.
+   * @param {string} text
+   * @returns {string}
+   */
+  function extractStem(text) {
+    if (!text) return '';
+    const idx = text.search(/[①②③④⑤⑥⑦⑧⑨]/);
+    const raw = idx === -1 ? text : text.slice(0, idx);
+    return raw.replace(/\s+/g, ' ').trim();
+  }
+
+  // 화면에 표시할 때 원문자(①②③…)가 폰트/환경에 따라 잘 안 보이는 경우가 있어,
+  // "인터페이스"에 노출되는(=사람이 읽는) 텍스트에서는 (1)(2)(3) 식으로 바꿔서
+  // 보여준다. 단, 이건 어디까지나 "표시용" 변환이고 DB에 저장된 실제 marker/code
+  // 값은 원문자 그대로 유지한다(코드 생성·매칭 로직이 원문자 기준이라 데이터
+  // 자체를 바꾸면 기존 저장분과 어긋난다) — 그래서 이 함수는 순수 문자열 변환만
+  // 하고 호출하는 쪽에서 "표시 직전"에만 쓰도록 한다(예: innerHTML 렌더링,
+  // 읽기 전용 뷰). 편집 가능한 입력창 값에는 적용하지 않는다(적용한 채로
+  // 저장해버리면 원문 데이터가 조용히 바뀌는 사고가 날 수 있어서).
+  const CIRCLE_TO_PLAIN = { '①': '(1)', '②': '(2)', '③': '(3)', '④': '(4)', '⑤': '(5)', '⑥': '(6)', '⑦': '(7)', '⑧': '(8)', '⑨': '(9)' };
+  function markerToPlain(marker) {
+    return CIRCLE_TO_PLAIN[marker] || marker || '';
+  }
+  function prettifyMarkers(text) {
+    return text ? text.replace(/[①②③④⑤⑥⑦⑧⑨]/g, (m) => CIRCLE_TO_PLAIN[m] || m) : text;
+  }
+
+  return {
+    analyze, detectHeader, cropToBlob, cropToThumbDataURL,
+    splitChoices, extractStem, CHOICE_MARKERS,
+    markerToPlain, prettifyMarkers,
+  };
 })();
 
 window.PDFAnalyze = PDFAnalyze;

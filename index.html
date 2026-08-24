@@ -40,6 +40,10 @@
     <option value="자료해석"><option value="언어논리"><option value="상황판단">
     <option value="경제학"><option value="행정법"><option value="행정학"><option value="헌법"><option value="노동법">
   </datalist>
+  <!-- 문제 태그(#detailTags,#bulkMetaTags)와 선지 태그(choices.js)가 공용으로 쓰는 자동완성 목록.
+       library.js/choices.js의 refresh() 때마다 기존 옵션에 새로 발견된 태그를 누적 병합한다
+       (한쪽에서 이미 채워둔 목록을 다른 쪽이 지워버리지 않도록 항상 "합집합"으로 갱신). -->
+  <datalist id="allTagList"></datalist>
 
   <!-- ===================== 가져오기 탭 ===================== -->
   <section id="tab-import" class="tabPanel active">
@@ -63,6 +67,13 @@
             <input type="checkbox" id="twoColumnChk" checked>
             2단 편집 시험지입니다
           </label>
+          <label class="checkboxLabel">
+            <input type="checkbox" id="extractChoicesChk" checked>
+            선지 텍스트도 함께 추출 (선지 라이브러리에 저장)
+          </label>
+          <p class="hint" style="margin-top:-4px;">문제 이미지는 그대로 저장되고, <b>텍스트로 인식되는 선지</b>(①②③…)만 추가로 잘라내
+            라이브러리 &rarr; "선지 보기"에서 따로 태그/OX 체크하며 공부할 수 있게 합니다. 선지가 표/그래프 등
+            이미지인 문제는 대상에서 자동으로 제외됩니다.</p>
 
           <details class="advancedDetails">
             <summary>고급 옵션 (모든 파일에 공통 적용)</summary>
@@ -129,6 +140,7 @@
       <div class="libViewSwitch">
         <button id="libViewQuestionsBtn" class="viewSwitchBtn active">📄 문제 보기</button>
         <button id="libViewPapersBtn" class="viewSwitchBtn">🗂 문제지 보기</button>
+        <button id="libViewChoicesBtn" class="viewSwitchBtn">🔤 선지 보기</button>
       </div>
       <div class="spacer"></div>
       <div id="libModeBarWrap" class="libModeBar">
@@ -166,7 +178,7 @@
       <!-- 검색/필터 줄 + 선택/일괄작업 줄을 카드 하나로 묶어 상단 공간 절약 -->
       <div class="card libControlBar">
         <div class="filterBar">
-          <input type="text" id="libSearch" placeholder="검색 (코드/시험명/과목/번호/태그/메모)">
+          <input type="text" id="libSearch" placeholder="검색 (코드/시험명/과목/번호/태그/메모/설문·선지 텍스트)">
           <select id="libExamFilter"><option value="">전체 문제지</option></select>
           <select id="libExamTypeFilter"><option value="">전체 시험유형</option></select>
           <select id="libSubjectFilter"><option value="">전체 과목</option></select>
@@ -193,6 +205,37 @@
         <div id="libListInner" class="libListInner"></div>
         <div id="libEmptyState" class="emptyState hidden">조건에 맞는 문제가 없습니다.</div>
       </div>
+    </div>
+
+    <!-- ---- 선지 보기 (텍스트로 추출된 개별 선지) ---- -->
+    <div id="choicesView" class="hidden">
+      <div class="card libControlBar">
+        <div class="filterBar">
+          <input type="text" id="choiceSearch" placeholder="검색 (선지 내용/코드/시험명/태그/메모)">
+          <select id="choiceExamTypeFilter"><option value="">전체 시험유형</option></select>
+          <select id="choiceSubjectFilter"><option value="">전체 과목</option></select>
+          <select id="choiceYearFilter"><option value="">전체 연도</option></select>
+          <select id="choiceTagFilter"><option value="">전체 태그</option></select>
+          <select id="choiceOxFilter">
+            <option value="">OX 전체</option>
+            <option value="O">O로 체크됨</option>
+            <option value="X">X로 체크됨</option>
+            <option value="none">미체크</option>
+          </select>
+        </div>
+        <div class="actionBar">
+          <label class="checkboxLabel"><input type="checkbox" id="selectAllChoicesChk"> 전체선택</label>
+          <span id="choiceSelectionCount">0개 선택됨</span>
+          <span id="choiceCount" class="libCount"></span>
+          <div class="spacer"></div>
+          <button id="btnChoiceBulkTag" class="btnSecondary">🏷 태그 일괄추가</button>
+          <button id="btnChoiceBulkOx" class="btnSecondary">OX 일괄지정</button>
+          <button id="btnExportChoices" class="btnSecondary">⇩ 선지목록 내보내기</button>
+          <button id="btnDeleteChoices" class="btnDanger" disabled>삭제</button>
+        </div>
+      </div>
+      <div id="choiceList" class="choiceList card"></div>
+      <div id="choiceEmptyState" class="emptyState hidden">조건에 맞는 선지가 없습니다. "가져오기" 탭에서 "선지 텍스트도 함께 추출" 옵션을 켠 뒤 PDF를 저장해보세요.</div>
     </div>
   </section>
 
@@ -332,34 +375,36 @@
         <button id="detailPrevQBtn" class="btnGhost detailNavQBtn" title="이전 문제 (Page Up)">◀ 이전 문제</button>
         <button id="detailNextQBtn" class="btnGhost detailNavQBtn" title="다음 문제 (Page Down)">다음 문제 ▶</button>
       </div>
-      <div class="detailZoomBar">
+      <div id="detailZoomBar" class="detailZoomBar">
         <button id="detailZoomOutBtn" class="btnGhost detailZoomBtn" title="축소 (-)">－</button>
         <button id="detailZoomLabel" class="btnGhost detailZoomBtn detailZoomLabel" title="100%로 초기화 (0)">100%</button>
         <button id="detailZoomInBtn" class="btnGhost detailZoomBtn" title="확대 (+)">＋</button>
       </div>
       <button id="detailViewToggle" class="btnGhost detailViewToggleBtn hidden">⊞ 한 장씩 보기</button>
+      <button id="detailModeToggle" class="btnGhost detailViewToggleBtn hidden" title="설문+선지가 텍스트로 모두 인식된 문제에서 이미지 대신 텍스트로 보기">🔤 텍스트로 보기</button>
       <button id="detailClose" class="btnGhost">✕ 닫기</button>
     </div>
     <div class="detailBody">
       <div class="detailViewer">
         <button id="detailPrevBtn" class="detailNavArrow detailNavArrow-prev hidden" title="이전 이미지 (←)">◀</button>
         <div id="detailImages" class="detailImages"></div>
+        <div id="detailTextView" class="detailTextView hidden"></div>
         <button id="detailNextBtn" class="detailNavArrow detailNavArrow-next hidden" title="다음 이미지 (→)">▶</button>
         <div id="detailImageCounter" class="detailImageCounter hidden"></div>
       </div>
       <aside class="detailSidebar">
         <div class="detailForm">
           <label>태그 (쉼표로 구분)
-            <input type="text" id="detailTags" placeholder="예: 법조문형, 계산형">
+            <input type="text" id="detailTags" placeholder="예: 법조문형, 계산형" list="allTagList">
           </label>
           <label>정답 (1~5)
             <select id="detailAnswer">
               <option value="">미입력</option>
-              <option value="1">①</option>
-              <option value="2">②</option>
-              <option value="3">③</option>
-              <option value="4">④</option>
-              <option value="5">⑤</option>
+              <option value="1">(1)</option>
+              <option value="2">(2)</option>
+              <option value="3">(3)</option>
+              <option value="4">(4)</option>
+              <option value="5">(5)</option>
             </select>
           </label>
           <label>해설
@@ -393,7 +438,7 @@
       <input type="text" id="bulkMetaSubject" list="subjectList" placeholder="예: 경제학 (비우면 변경 안 함)">
     </label>
     <label>태그 (쉼표로 구분)
-      <input type="text" id="bulkMetaTags" placeholder="예: 계산형, 그래프 (비우면 변경 안 함)">
+      <input type="text" id="bulkMetaTags" placeholder="예: 계산형, 그래프 (비우면 변경 안 함)" list="allTagList">
     </label>
     <div class="filterBar">
       <label class="checkboxLabel"><input type="radio" name="bulkMetaTagMode" value="add" checked> 기존 태그에 추가</label>
@@ -437,8 +482,8 @@
     <label>시험 선택
       <select id="bulkAnswerExam"></select>
     </label>
-    <label>정답 목록 (한 줄에 "문제번호 정답" — 예: 1 3)
-      <textarea id="bulkAnswerText" rows="10" placeholder="1 3&#10;2 5&#10;3 1&#10;..."></textarea>
+    <label>정답 목록 — 두 형식 중 편한 쪽으로 입력하세요(자동으로 구분해서 인식합니다)
+      <textarea id="bulkAnswerText" rows="10" placeholder="방법1) 문제번호 정답, 한 줄에 하나씩&#10;1 3&#10;2 5&#10;3 1&#10;...&#10;&#10;방법2) 문제번호 없이 순서대로, 답만 이어서(5개씩 띄어써도 됨)&#10;15432 10234 34231 ...&#10;(정답이 없거나 복수정답이면 0)"></textarea>
     </label>
 
     <div class="answerSheetImportBox">
@@ -491,6 +536,69 @@
       <span id="bulkApplyResultStatus" class="statusText"></span>
       <button id="bulkApplyCancel" class="btnGhost">취소</button>
       <button id="bulkApplyRun" class="btnPrimary" disabled>일괄 적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 선지 태그 일괄추가 모달 ===================== -->
+<div id="choiceBulkTagModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>선택한 선지에 태그 일괄추가</h2>
+    <p class="reviewHelp">기존에 쓰던 태그 체계를 그대로 재활용합니다(문제 태그와 동일한 방식, 쉼표로 구분).</p>
+    <label>태그 (쉼표로 구분)
+      <input type="text" id="choiceBulkTagInput" placeholder="예: 계산형, 헷갈림" list="allTagList">
+    </label>
+    <div class="filterBar">
+      <label class="checkboxLabel"><input type="radio" name="choiceBulkTagMode" value="add" checked> 기존 태그에 추가</label>
+      <label class="checkboxLabel"><input type="radio" name="choiceBulkTagMode" value="replace"> 태그 전체 교체</label>
+    </div>
+    <div class="modalActions">
+      <button id="choiceBulkTagCancel" class="btnGhost">취소</button>
+      <button id="choiceBulkTagApply" class="btnPrimary">적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 선지 OX 일괄지정 모달 ===================== -->
+<div id="choiceBulkOxModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>선택한 선지 OX 일괄 지정</h2>
+    <p class="reviewHelp">선택한 선지들의 OX 값을 한 번에 지정합니다.</p>
+    <div class="filterBar">
+      <label class="checkboxLabel"><input type="radio" name="choiceBulkOxVal" value="O" checked> 모두 O</label>
+      <label class="checkboxLabel"><input type="radio" name="choiceBulkOxVal" value="X"> 모두 X</label>
+      <label class="checkboxLabel"><input type="radio" name="choiceBulkOxVal" value="none"> 미정으로 초기화</label>
+    </div>
+    <div class="modalActions">
+      <button id="choiceBulkOxCancel" class="btnGhost">취소</button>
+      <button id="choiceBulkOxApply" class="btnPrimary">적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 선지목록 내보내기 모달 ===================== -->
+<div id="choiceExportModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2>선지목록 내보내기</h2>
+    <p id="choiceExportCount" class="hint"></p>
+    <label>제목
+      <input type="text" id="choiceExportTitle" placeholder="예: 자료해석 선지 모음">
+    </label>
+    <label>정렬 방식
+      <select id="choiceExportOrder">
+        <option value="code">코드순 (시험 → 문제번호 → 선지번호)</option>
+        <option value="selection">선택한 순서 그대로</option>
+      </select>
+    </label>
+    <div class="exportInlineOptionsRow">
+      <label class="checkboxLabel"><input type="checkbox" id="choiceExportOxChk"> 선지 끝에 OX 정답 표시 (작은 회색 글씨)</label>
+      <label class="checkboxLabel"><input type="checkbox" id="choiceExportMemoChk"> 아랫줄에 메모 포함</label>
+    </div>
+    <label class="checkboxLabel"><input type="checkbox" id="choiceExportOxOnlyChk"> OX가 체크된 선지만 포함</label>
+    <div class="modalActions">
+      <span id="choiceExportStatus" class="statusText"></span>
+      <button id="choiceExportCancel" class="btnGhost">취소</button>
+      <button id="choiceExportRun" class="btnPrimary">내보내기</button>
     </div>
   </div>
 </div>
@@ -562,11 +670,14 @@
           <span id="solveMetaCode" class="solveMetaCode"></span>
           <span id="solveMetaSub" class="solveMetaSub"></span>
         </div>
+        <span id="solveTimer" class="solveTimer" title="이 문제에 머무른 시간">⏱ 00:00</span>
+        <button id="solveTextToggle" class="solveIconBtn hidden" title="설문+선지가 텍스트로 모두 인식된 문제에서 이미지 대신 텍스트로 보기">🔤</button>
         <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
         <button id="solveGradeBtn" class="btnPrimary solveGradeBtn">채점</button>
       </div>
 
       <div id="solveImageArea" class="solveImageArea"></div>
+      <div id="solveTextArea" class="solveTextArea hidden"></div>
 
       <div id="solveAnswerPanel" class="solveAnswerPanel hidden"></div>
 
@@ -624,10 +735,13 @@
 <script src="js/db.js"></script>
 <script src="js/pdfAnalyze.js"></script>
 <script src="js/tagger.js"></script>
+<script src="js/textViewPrefs.js"></script>
 <script src="js/importMemory.js"></script>
 <script src="js/importUI.js"></script>
 <script src="js/answerSheetImport.js"></script>
 <script src="js/library.js"></script>
+<script src="js/choices.js"></script>
+<script src="js/exportChoices.js"></script>
 <script src="js/solve.js"></script>
 <script src="js/exportPdf.js"></script>
 <script src="js/settings.js"></script>

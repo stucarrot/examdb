@@ -30,18 +30,25 @@ const LibraryUI = (() => {
   let detailNavList = [];   // 현재 뷰어에서 "이전 문제/다음 문제"로 이동할 수 있는 문제 목록(연 시점의 filtered 스냅샷)
   let detailNavIndex = -1;  // detailNavList 안에서 현재 문제의 위치
   let detailZoom = 1;       // 문제 뷰어 확대 배율(1 = 원래 맞춤 크기)
+  let detailTextPref = false; // "텍스트로 보기" 선호 여부(전역, DB.meta에 영구 저장) — 내가 바꾸기 전까진 문제를 넘겨도 유지됨
+  const DETAIL_TEXT_PREF_KEY = 'libDetailTextPref';
+  let lastRenderedDetailMode = 'image'; // renderDetailBody가 매번 갱신 — 키보드 단축키가 "지금 실제로 보이는 모드"를 알아야 해서(effectiveDetailMode 재계산 없이 참조용)
+  let detailChoices = [];   // 텍스트 보기용, 현재 문제의 choices 스토어 레코드 캐시(마커 순 정렬)
   const ZOOM_MIN = 0.5, ZOOM_MAX = 3, ZOOM_STEP = 0.25;
   let zoomPanState = null;  // 확대된 이미지를 드래그로 스크롤(팬)하는 동안의 상태
   let currentEditExamId = null;
-  let currentView = 'questions'; // 'questions' | 'papers'
+  let currentView = 'questions'; // 'questions' | 'papers' | 'choices'
   let currentListMode = 'list'; // 'list' | 'card' — 문제 목록 표시 방식
 
   function el(sel, root = document) { return root.querySelector(sel); }
   function elAll(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
 
   function init() {
+    DB.getMeta(DETAIL_TEXT_PREF_KEY).then((v) => { detailTextPref = !!v; });
+
     el('#libViewQuestionsBtn').addEventListener('click', () => switchView('questions'));
     el('#libViewPapersBtn').addEventListener('click', () => switchView('papers'));
+    el('#libViewChoicesBtn').addEventListener('click', () => switchView('choices'));
 
     el('#selectAllPapersChk').addEventListener('change', (e) => {
       if (e.target.checked) filteredExams.forEach((ex) => selectedExamIds.add(ex.id));
@@ -134,6 +141,7 @@ const LibraryUI = (() => {
     el('#detailSave').addEventListener('click', saveDetail);
     el('#detailDelete').addEventListener('click', deleteDetail);
     el('#detailViewToggle').addEventListener('click', toggleDetailViewMode);
+    el('#detailModeToggle').addEventListener('click', toggleDetailMode);
     el('#detailPrevBtn').addEventListener('click', () => stepDetailImage(-1));
     el('#detailNextBtn').addEventListener('click', () => stepDetailImage(1));
     el('#detailPrevQBtn').addEventListener('click', () => stepDetailQuestion(-1));
@@ -174,13 +182,13 @@ const LibraryUI = (() => {
       // 태그/해설/메모 등 입력창에 타이핑 중일 때는 화살표·+/-/0/PageUp/PageDown을 그대로 텍스트 입력으로 사용
       const tag = (document.activeElement && document.activeElement.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === 'ArrowLeft') stepDetailImage(-1);
-      else if (e.key === 'ArrowRight') stepDetailImage(1);
+      if (e.key === 'ArrowLeft') { if (lastRenderedDetailMode === 'image') stepDetailImage(-1); }
+      else if (e.key === 'ArrowRight') { if (lastRenderedDetailMode === 'image') stepDetailImage(1); }
       else if (e.key === 'PageUp') { e.preventDefault(); stepDetailQuestion(-1); }
       else if (e.key === 'PageDown') { e.preventDefault(); stepDetailQuestion(1); }
-      else if (e.key === '+' || e.key === '=') { e.preventDefault(); setZoom(detailZoom + ZOOM_STEP); }
-      else if (e.key === '-' || e.key === '_') { e.preventDefault(); setZoom(detailZoom - ZOOM_STEP); }
-      else if (e.key === '0') { e.preventDefault(); setZoom(1); }
+      else if (e.key === '+' || e.key === '=') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(detailZoom + ZOOM_STEP); } }
+      else if (e.key === '-' || e.key === '_') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(detailZoom - ZOOM_STEP); } }
+      else if (e.key === '0') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(1); } }
     });
     // 뷰어가 열려 있는 동안 창 크기가 바뀌면 칸 크기가 달라지므로 줌 픽셀 계산을 다시 적용
     window.addEventListener('resize', () => {
@@ -200,6 +208,7 @@ const LibraryUI = (() => {
   function onShow() {
     renderVisible();
     if (currentView === 'papers') renderPapers();
+    if (currentView === 'choices') window.ChoicesUI && window.ChoicesUI.onShow();
   }
 
   function switchListMode(mode) {
@@ -220,9 +229,12 @@ const LibraryUI = (() => {
     currentView = view;
     el('#libViewQuestionsBtn').classList.toggle('active', view === 'questions');
     el('#libViewPapersBtn').classList.toggle('active', view === 'papers');
+    el('#libViewChoicesBtn').classList.toggle('active', view === 'choices');
     el('#questionsView').classList.toggle('hidden', view !== 'questions');
     el('#papersView').classList.toggle('hidden', view !== 'papers');
+    el('#choicesView').classList.toggle('hidden', view !== 'choices');
     if (view === 'papers') renderPapers();
+    else if (view === 'choices') window.ChoicesUI && window.ChoicesUI.onShow();
     else renderVisible();
   }
 
@@ -473,6 +485,7 @@ const LibraryUI = (() => {
     fillSelectObjects('#libSubjectFilter', subjectOptions, '전체 과목');
     fillSelectObjects('#libYearFilter', yearOptions, '전체 연도');
     fillSelect('#libTagFilter', tags, '전체 태그');
+    mergeIntoGlobalTagList([...tags, ...(window.Tagger ? Tagger.allKnownTags() : [])]);
   }
 
   function fillSelect(sel, values, allLabel) {
@@ -487,6 +500,18 @@ const LibraryUI = (() => {
     const cur = node.value;
     node.innerHTML = `<option value="">${allLabel}</option>` + options.map((o) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join('');
     if (options.some((o) => o.value === cur)) node.value = cur;
+  }
+
+  /** 문제 태그(#detailTags,#bulkMetaTags)와 선지 태그(choices.js)가 함께 쓰는 자동완성
+   * 데이터리스트(#allTagList)를 갱신한다. 이미 채워진 옵션을 지우지 않고 "합집합"으로만
+   * 더하는 이유: library.js와 choices.js가 각자 자기가 아는 태그만 채우기 때문에,
+   * 덮어쓰면 먼저 채운 쪽이 나중에 새로고침될 때 다른 쪽 태그를 지워버리게 된다. */
+  function mergeIntoGlobalTagList(newTags) {
+    const dl = document.getElementById('allTagList');
+    if (!dl) return;
+    const existing = Array.from(dl.options).map((o) => o.value);
+    const merged = Array.from(new Set([...existing, ...newTags])).filter(Boolean).sort();
+    dl.innerHTML = merged.map((t) => `<option value="${escapeHtml(t)}">`).join('');
   }
 
   function applyFilters() {
@@ -515,7 +540,7 @@ const LibraryUI = (() => {
       if (tag && !(item.tags || []).includes(tag)) return false;
       if (ungradedOnly && item.answer) return false;
       if (q) {
-        const hay = [item.code, item.examTitle, item.subject, String(item.qnum), (item.tags || []).join(','), item.memo, item.explanation]
+        const hay = [item.code, item.examTitle, item.subject, String(item.qnum), (item.tags || []).join(','), item.memo, item.explanation, item.searchText]
           .join(' ')
           .toLowerCase();
         if (!hay.includes(q)) return false;
@@ -695,6 +720,11 @@ const LibraryUI = (() => {
     detailViewMode = 'all';
     detailIndex = 0;
     detailZoom = 1;
+    // 이미지/텍스트 모드는 "내가 바꾸기 전까지" 유지되는 선호값(detailTextPref, 전역)이지,
+    // 문제 하나 열 때마다 리셋되는 값이 아니다 — 이전 문제에서 텍스트로 보고 있었다면
+    // 다음 문제도 (텍스트 지원이 되는 한) 그대로 텍스트로 이어서 보여준다.
+    detailChoices = q.hasTextChoices ? await DB.getChoicesByQuestion(id) : [];
+    detailChoices.sort((a, b) => (a.markerIndex || 0) - (b.markerIndex || 0));
 
     detailNavList = navList || filtered;
     detailNavIndex = detailNavList.findIndex((item) => item.id === id);
@@ -706,9 +736,67 @@ const LibraryUI = (() => {
     el('#detailExplanation').value = q.explanation || '';
     el('#detailMemo').value = q.memo || '';
 
+    el('#detailModeToggle').classList.toggle('hidden', !q.hasTextChoices);
+
     updateDetailNav();
-    renderDetailImages();
+    renderDetailBody(q);
     el('#detailPanel').classList.remove('hidden');
+  }
+
+  /** 지금 이 문제에 대해 실제로 보여줄 모드. "텍스트로 보기"를 선호(detailTextPref)해도
+   * 이 문제가 텍스트 지원이 안 되면(hasTextChoices=false) 이미지로 자동 대체한다 —
+   * 선호값 자체는 그대로 유지되므로 다음 문제가 텍스트 지원이면 다시 텍스트로 보인다. */
+  function effectiveDetailMode(q) {
+    return detailTextPref && q && q.hasTextChoices ? 'text' : 'image';
+  }
+
+  /** 이미지/텍스트 두 보기 중 현재 모드에 맞는 쪽만 그린다. 문제 이미지는 오류에
+   * 대비해 텍스트 모드에서도 그대로 저장되어 있으니(추출은 "함께" 만드는 것이지 이미지를
+   * 대체하는 게 아님) 언제든 토글로 다시 이미지로 돌아갈 수 있다. */
+  function renderDetailBody(q) {
+    const mode = effectiveDetailMode(q);
+    lastRenderedDetailMode = mode;
+    el('#detailImages').classList.toggle('hidden', mode === 'text');
+    el('#detailViewToggle').classList.toggle('hidden', mode === 'text' || detailObjectURLs.length <= 1);
+    el('#detailPrevBtn').classList.toggle('hidden', mode === 'text');
+    el('#detailNextBtn').classList.toggle('hidden', mode === 'text');
+    el('#detailImageCounter').classList.toggle('hidden', mode === 'text');
+    el('#detailZoomBar').classList.toggle('hidden', mode === 'text');
+    el('#detailTextView').classList.toggle('hidden', mode !== 'text');
+    el('#detailModeToggle').textContent = mode === 'text' ? '🖼 이미지로 보기' : '🔤 텍스트로 보기';
+    if (mode === 'text') renderDetailTextView(q);
+    else renderDetailImages();
+  }
+
+  async function toggleDetailMode() {
+    detailTextPref = !detailTextPref;
+    await DB.setMeta(DETAIL_TEXT_PREF_KEY, detailTextPref);
+    const q = await DB.getQuestion(currentDetailId);
+    if (q) renderDetailBody(q);
+  }
+
+  /** 설문(발문) + 선지를 그대로 텍스트로 보여준다. 이미지 없이 "읽기"만으로 문제를 볼 수 있게 하되,
+   * 여기선 읽기 전용 — 태그/정답/해설/메모 편집은 옆 사이드바 폼을 그대로 쓴다(중복 UI 방지).
+   * 원문자(①②③…) 마커는 화면에서 잘 안 보일 수 있어 (1)(2)(3) 식으로 바꿔서 표시한다
+   * (PDFAnalyze.prettifyMarkers — 표시용 변환일 뿐 저장된 값은 그대로). */
+  function renderDetailTextView(q) {
+    const stem = escapeHtml(PDFAnalyze.prettifyMarkers(q.stemFullText) || '(발문 텍스트를 인식하지 못했습니다)').replace(/\n/g, '<br>');
+    const choicesHtml = detailChoices.map((c) => `
+      <div class="detailTextChoice">
+        <span class="detailTextChoiceMarker">${escapeHtml(PDFAnalyze.markerToPlain(c.marker))}</span>
+        <span class="detailTextChoiceBody">${escapeHtml(PDFAnalyze.prettifyMarkers(c.text))}</span>
+      </div>`).join('');
+    const view = el('#detailTextView');
+    view.innerHTML = `
+      ${TextViewPrefs.controlsHtml()}
+      <div class="tvReadingArea">
+        <div class="detailTextStem">${stem}</div>
+        <div class="detailTextChoices">${choicesHtml}</div>
+        <p class="hint" style="margin-top:10px;">텍스트는 PDF에서 자동 추출된 것이라 오탈자가 있을 수 있습니다. 정확한 원문은 언제든 "🖼 이미지로 보기"로 확인하세요.</p>
+      </div>
+    `;
+    TextViewPrefs.applyTo(view.querySelector('.tvReadingArea'));
+    TextViewPrefs.wireControls(view, () => TextViewPrefs.applyTo(view.querySelector('.tvReadingArea')));
   }
 
   /** 상단바의 "이전 문제/다음 문제" 버튼 활성/비활성 상태 및 위치 표시(n / 전체) 갱신 */
@@ -834,6 +922,7 @@ const LibraryUI = (() => {
     q.explanation = el('#detailExplanation').value;
     q.memo = el('#detailMemo').value;
     await DB.updateQuestion(q);
+    mergeIntoGlobalTagList(q.tags);
     await refresh();
     // 뷰어는 닫지 않고 그대로 열어둔 채, 새로고침된 목록에서 같은 문제를 다시 찾아
     // detailNavList/detailNavIndex를 최신 상태로 맞춰준다(이전/다음 이동이 새 데이터 기준으로 동작하도록).
@@ -865,11 +954,27 @@ const LibraryUI = (() => {
     await refresh();
   }
 
+  /** "정답 일괄 입력" 텍스트를 두 형식 중 자동으로 판별해 적용한다.
+   *  1) 기존 "문제번호 정답"(줄 단위) 형식 — 정답표 자동인식 기능이 채워주는
+   *     형식이 이거라 계속 지원해야 한다. 이 형식으로 한 쌍이라도 인식되면
+   *     이 방식으로 처리한다.
+   *  2) 신규 "문제번호 없이 순서대로" 형식 — 공백/줄바꿈은 그냥 5개씩 끊어
+   *     적기 편하라고 넣는 구분자일 뿐, 실제로는 전부 이어붙여서 한 자리
+   *     숫자를 문제 순서(qnum 오름차순)대로 하나씩 매칭한다. 예)
+   *     "15432 10234 …" → 1번=1, 2번=5, 3번=4, 4번=3, 5번=2, 6번=1, 7번=0(정답없음/복수정답→건드리지 않음), …
+   *     자릿수가 숫자 하나뿐이므로 정답이 1~9인 문제까지만 표현 가능(현재
+   *     이 앱의 정답 입력 자체가 1~5 범위라 실사용엔 문제없음). 0은 "정답
+   *     없음 또는 복수정답 인정이라 한 자리로 못 담는 경우"로 보고 그
+   *     문제는 건드리지 않는다.
+   */
   async function applyBulkAnswers() {
     const examId = el('#bulkAnswerExam').value;
     const text = el('#bulkAnswerText').value;
     if (!examId) { alert('문제지를 선택해주세요.'); return; }
 
+    const targets = fullList.filter((q) => q.examId === examId).sort((a, b) => a.qnum - b.qnum);
+
+    // ---- 형식 1: "문제번호 정답" 줄 단위 ----
     const pairs = [];
     text.split(/\r?\n/).forEach((line) => {
       const cleaned = line.trim().replace(/[:,\-.\)]/g, ' ').replace(/\s+/g, ' ');
@@ -879,19 +984,42 @@ const LibraryUI = (() => {
         pairs.push([parseInt(parts[0], 10), parts[1]]);
       }
     });
-    if (pairs.length === 0) { alert('인식된 정답이 없습니다. "문제번호 정답" 형식으로 한 줄씩 입력해주세요. 예) 1 3'); return; }
 
-    const targets = fullList.filter((q) => q.examId === examId);
     let applied = 0;
-    for (const [qnum, answer] of pairs) {
-      const q = targets.find((t) => t.qnum === qnum);
-      if (q) {
-        q.answer = String(answer);
-        await DB.updateQuestion(q);
-        applied++;
+    let mode = '';
+    let digits = '';
+
+    if (pairs.length > 0) {
+      mode = 'pair';
+      for (const [qnum, answer] of pairs) {
+        const q = targets.find((t) => t.qnum === qnum);
+        if (q) { q.answer = String(answer); await DB.updateQuestion(q); applied++; }
+      }
+    } else {
+      // ---- 형식 2: 순서대로 이어붙인 숫자열(공백은 5개씩 끊어쓰기용 구분자일 뿐) ----
+      digits = text.replace(/\s+/g, '');
+      if (digits && /^\d+$/.test(digits)) {
+        mode = 'sequence';
+        for (let i = 0; i < digits.length && i < targets.length; i++) {
+          const d = digits[i];
+          if (d === '0') continue; // 정답 없음/복수정답 표시 — 건드리지 않음
+          const q = targets[i];
+          q.answer = d;
+          await DB.updateQuestion(q);
+          applied++;
+        }
       }
     }
-    alert(`${applied}개 문제에 정답을 반영했습니다.`);
+
+    if (!mode) {
+      alert('인식된 정답이 없습니다.\n\n방법1) "문제번호 정답"을 한 줄씩 — 예) 1 3\n방법2) 문제번호 없이 순서대로, 답만 이어서(5개씩 띄어써도 됨) — 예) 15432 10234 …\n(0은 정답없음/복수정답)');
+      return;
+    }
+
+    const mismatchNote = mode === 'sequence' && digits.length !== targets.length
+      ? `\n(참고: 입력한 숫자 ${digits.length}개 / 이 문제지의 문제 수 ${targets.length}개 — 앞에서부터 순서대로만 매칭했습니다.)`
+      : '';
+    alert(`${applied}개 문제에 정답을 반영했습니다.${mismatchNote}`);
     el('#bulkAnswerModal').classList.add('hidden');
     el('#bulkAnswerText').value = '';
     await refresh();

@@ -11,7 +11,7 @@
  */
 
 const DB_NAME = 'examBankDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 let _dbPromise = null;
 
 function openDB() {
@@ -37,6 +37,19 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' });
+      }
+      // v3: 선지(choice) 단위 텍스트 추출 라이브러리. 문제(questions)와 별개로,
+      // 텍스트 선지만 개별 저장해 태그/OX 체크/내보내기가 가능하게 한다.
+      if (!db.objectStoreNames.contains('choices')) {
+        const cs = db.createObjectStore('choices', { keyPath: 'id' });
+        cs.createIndex('questionId', 'questionId', { unique: false });
+        cs.createIndex('examId', 'examId', { unique: false });
+        cs.createIndex('subject', 'subject', { unique: false });
+      } else {
+        const cs = req.transaction.objectStore('choices');
+        if (!cs.indexNames.contains('questionId')) cs.createIndex('questionId', 'questionId', { unique: false });
+        if (!cs.indexNames.contains('examId')) cs.createIndex('examId', 'examId', { unique: false });
+        if (!cs.indexNames.contains('subject')) cs.createIndex('subject', 'subject', { unique: false });
       }
     };
     req.onsuccess = (e) => resolve(e.target.result);
@@ -199,9 +212,11 @@ const DB = {
   },
 
   async deleteQuestions(ids) {
-    const t = await txStores(['questions', 'images'], 'readwrite');
+    const t = await txStores(['questions', 'images', 'choices'], 'readwrite');
     const qs = t.objectStore('questions');
     const is = t.objectStore('images');
+    const cs = t.objectStore('choices');
+    const cIdx = cs.index('questionId');
     for (const id of ids) {
       const getReq = qs.get(id);
       await new Promise((res) => {
@@ -212,6 +227,15 @@ const DB = {
           res();
         };
         getReq.onerror = () => res();
+      });
+      // 이 문제에서 추출해둔 선지(choices)도 함께 정리한다(고아 레코드 방지).
+      await new Promise((res) => {
+        const cReq = cIdx.openCursor(IDBKeyRange.only(id));
+        cReq.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { cursor.delete(); cursor.continue(); } else res();
+        };
+        cReq.onerror = () => res();
       });
     }
     return new Promise((res, rej) => {
@@ -262,6 +286,82 @@ const DB = {
     return blobs.map((b) => URL.createObjectURL(b));
   },
 
+  // ---------------- choices (문제에서 추출한 개별 선지 텍스트) ----------------
+
+  async addChoice(choice) {
+    if (!choice.id) choice.id = uid('c');
+    choice.createdAt = choice.createdAt || Date.now();
+    const t = await txStores(['choices'], 'readwrite');
+    t.objectStore('choices').put(choice);
+    return new Promise((res, rej) => {
+      t.oncomplete = () => res(choice);
+      t.onerror = () => rej(t.error);
+    });
+  },
+
+  /** 선지 여러 개를 한 트랜잭션으로 일괄 저장(가져오기 시 사용) */
+  async addChoices(choices) {
+    if (!choices || !choices.length) return [];
+    const t = await txStores(['choices'], 'readwrite');
+    const store = t.objectStore('choices');
+    choices.forEach((c) => {
+      if (!c.id) c.id = uid('c');
+      c.createdAt = c.createdAt || Date.now();
+      store.put(c);
+    });
+    return new Promise((res, rej) => {
+      t.oncomplete = () => res(choices);
+      t.onerror = () => rej(t.error);
+    });
+  },
+
+  async updateChoice(choice) {
+    const t = await txStores(['choices'], 'readwrite');
+    t.objectStore('choices').put(choice);
+    return new Promise((res, rej) => {
+      t.oncomplete = () => res(choice);
+      t.onerror = () => rej(t.error);
+    });
+  },
+
+  async getChoice(id) {
+    const t = await txStores(['choices'], 'readonly');
+    return new Promise((res, rej) => {
+      const r = t.objectStore('choices').get(id);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+
+  async getAllChoices() {
+    const t = await txStores(['choices'], 'readonly');
+    return new Promise((res, rej) => {
+      const r = t.objectStore('choices').getAll();
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => rej(r.error);
+    });
+  },
+
+  async getChoicesByQuestion(questionId) {
+    const t = await txStores(['choices'], 'readonly');
+    return new Promise((res, rej) => {
+      const idx = t.objectStore('choices').index('questionId');
+      const r = idx.getAll(IDBKeyRange.only(questionId));
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => rej(r.error);
+    });
+  },
+
+  async deleteChoices(ids) {
+    const t = await txStores(['choices'], 'readwrite');
+    const store = t.objectStore('choices');
+    for (const id of ids) store.delete(id);
+    return new Promise((res, rej) => {
+      t.oncomplete = res;
+      t.onerror = () => rej(t.error);
+    });
+  },
+
   async setMeta(key, value) {
     const t = await txStores(['meta'], 'readwrite');
     t.objectStore('meta').put({ key, value });
@@ -309,6 +409,7 @@ const DB = {
   async exportAll(onProgress) {
     const exams = await this.getAllExams();
     const questions = await this.getAllQuestions();
+    const choices = await this.getAllChoices();
     const meta = await this.getAllMeta();
     const out = [];
     let i = 0;
@@ -322,7 +423,7 @@ const DB = {
       i++;
       if (onProgress) onProgress(i, questions.length);
     }
-    return { app: 'examBank', version: 2, exportedAt: new Date().toISOString(), exams, questions: out, meta };
+    return { app: 'examBank', version: 3, exportedAt: new Date().toISOString(), exams, questions: out, choices, meta };
   },
 
   /** 백업 복원. merge=false 면 기존 데이터 전부 삭제 후 복원 */
@@ -350,6 +451,14 @@ const DB = {
       if (onProgress) onProgress(i, list.length);
     }
 
+    // 선지(choices) 백업 복원 — v3 이전 백업 파일에는 이 필드가 없을 수 있으므로 없으면 건너뜀.
+    const choiceList = (data && data.choices) || [];
+    for (const c of choiceList) {
+      const clean = { ...c };
+      if (!clean.id) clean.id = uid('c');
+      await this.addChoice(clean);
+    }
+
     // meta(가져오기 자동완성 기억 등 내부 설정)도 함께 있으면 복원한다.
     // merge=false로 전체 교체한 경우엔 clearAll()이 exams/questions/images만
     // 비웠으므로, 여기서도 같은 merge 플래그로 meta를 통일성 있게 처리한다.
@@ -361,10 +470,11 @@ const DB = {
   },
 
   async clearAll() {
-    const t = await txStores(['exams', 'questions', 'images'], 'readwrite');
+    const t = await txStores(['exams', 'questions', 'images', 'choices'], 'readwrite');
     t.objectStore('exams').clear();
     t.objectStore('questions').clear();
     t.objectStore('images').clear();
+    t.objectStore('choices').clear();
     return new Promise((res, rej) => {
       t.oncomplete = res;
       t.onerror = () => rej(t.error);

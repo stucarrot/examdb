@@ -13,6 +13,7 @@
 
 const SolveUI = (() => {
   const SESSION_KEY = 'solveSession';
+  const TEXT_MODE_KEY = 'solveTextModePref';
 
   let allQuestions = [];      // 설정 화면 필터링용 전체 문제 캐시
   let matched = [];           // 현재 필터 조건에 맞는 문제들
@@ -21,8 +22,18 @@ const SolveUI = (() => {
   let session = null;         // { id, questionIds, index, userAnswers, revealed, submitted, filterLabel, createdAt, updatedAt }
   let questions = [];         // session.questionIds에 대응하는 실제 문제 객체 배열(풀이 중 캐시)
   let urlCache = new Map();   // qid -> [objectURL, ...]
+  let choicesCache = new Map(); // qid -> choices[] (텍스트 보기용, hasTextChoices인 문제만 채워짐)
+  let textMode = false;       // 이미지 대신 텍스트로 풀기 — 설정을 기억해뒀다가 다음 진입 때도 이어서 씀
   let drawerOpen = false;
   let touchState = null;      // 스와이프 제스처 추적
+
+  // ---- 문제별 체류 시간 타이머 ----
+  // "지금 보고 있는 문제에 얼마나 머물렀는지"만 보여주는 단순 스톱워치. 다른
+  // 문제로 이동하거나, 채점하거나, 나갔다 다시 들어오면 그때마다 0초로
+  // 초기화된다(문제 간 시간을 누적하지 않음 — 순수하게 "지금 이 문제"용).
+  let timerInterval = null;
+  let timerQid = null;
+  let timerStartTs = 0;
 
   function el(sel, root = document) { return root.querySelector(sel); }
   function elAll(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
@@ -56,6 +67,7 @@ const SolveUI = (() => {
     el('#solveNextBtn').addEventListener('click', () => goTo(session.index + 1));
     el('#solveRevealBtn').addEventListener('click', onRevealClick);
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
+    el('#solveTextToggle').addEventListener('click', onTextToggleClick);
 
     // ---- 드로어(문제 목록) ----
     el('#solveListBtn').addEventListener('click', openDrawer);
@@ -83,6 +95,7 @@ const SolveUI = (() => {
   async function onShow() {
     allQuestions = await DB.getAllQuestions();
     await refreshSetupScreen();
+    textMode = !!(await DB.getMeta(TEXT_MODE_KEY));
 
     const persisted = await DB.getMeta(SESSION_KEY);
     if (persisted && persisted.questionIds && persisted.questionIds.length && !persisted.submitted) {
@@ -257,7 +270,8 @@ const SolveUI = (() => {
     session.updatedAt = Date.now();
     const slim = {
       id: session.id, questionIds: session.questionIds, index: session.index,
-      userAnswers: session.userAnswers, revealed: session.revealed, submitted: session.submitted,
+      userAnswers: session.userAnswers, revealed: session.revealed,
+      submitted: session.submitted,
       filterLabel: session.filterLabel, createdAt: session.createdAt, updatedAt: session.updatedAt,
     };
     await DB.setMeta(SESSION_KEY, session.submitted ? null : slim);
@@ -285,6 +299,7 @@ const SolveUI = (() => {
     // 세션은 이미 답을 바꿀 때마다 저장돼 있으므로 그냥 화면만 닫는다(다음에 이 탭에
     // 들어오면 자동으로 이어서 풀이가 열림). 여기서 onShow()를 다시 부르면 방금 닫은
     // 화면이 곧바로 재오픈되어버리므로 설정 화면 새로고침만 한다.
+    stopTimer(); // 나갔다 다시 들어오면 타이머는 항상 0초부터 — 인터벌만 정리하면 충분(누적 저장 없음)
     revokeAllUrls();
     el('#solveOverlay').classList.add('hidden');
     refreshSetupScreen();
@@ -297,17 +312,68 @@ const SolveUI = (() => {
     render();
   }
 
+  function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    timerQid = null;
+  }
+
+  function startTimer(qid) {
+    timerQid = qid;
+    timerStartTs = Date.now();
+    updateTimerDisplay();
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(updateTimerDisplay, 1000);
+  }
+
+  /** render()가 매번 호출돼도(답 선택, 텍스트 토글 등으로 같은 문제를 다시 그릴 때) 타이머가
+   * 리셋되지 않게 하되, 문제가 실제로 바뀌었을 때는 무조건 0초부터 다시 시작한다(요청대로
+   * 문제 간 시간을 이어서 누적하지 않음). */
+  function ensureTimerFor(qid) {
+    if (timerQid === qid && timerInterval) return;
+    startTimer(qid);
+  }
+
+  function updateTimerDisplay() {
+    if (!timerQid) return;
+    const totalSec = Math.floor((Date.now() - timerStartTs) / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    const label = `⏱ ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    const timerEl = el('#solveTimer');
+    if (timerEl) timerEl.textContent = label;
+  }
+
   async function render() {
     const q = questions[session.index];
     if (!q) return;
+
+    ensureTimerFor(q.id);
 
     el('#solveMetaCode').textContent = q.code || q.examTitle || '';
     el('#solveMetaSub').textContent = `${q.examTitle || ''} · ${q.subject || ''} · ${q.qnum ?? ''}번`;
 
     if (!urlCache.has(q.id)) urlCache.set(q.id, await DB.getImageURLs(q));
-    const imgArea = el('#solveImageArea');
-    imgArea.innerHTML = urlCache.get(q.id).map((u) => `<img src="${u}" alt="문제 이미지">`).join('');
-    imgArea.classList.toggle('layout-row', q.partsLayout === 'row');
+
+    el('#solveTextToggle').classList.toggle('hidden', !q.hasTextChoices);
+    // 텍스트 모드를 켜뒀어도 이 문제가 텍스트 선지를 못 뽑아낸 문제라면(hasTextChoices=false)
+    // 이미지로 자동 대체해서 보여준다 — 토글 자체(preference)는 그대로 켜진 채 유지되므로
+    // 다음 문제로 넘어가면 다시 텍스트로 보인다.
+    const showText = textMode && q.hasTextChoices;
+    el('#solveImageArea').classList.toggle('hidden', showText);
+    el('#solveTextArea').classList.toggle('hidden', !showText);
+
+    if (showText) {
+      if (!choicesCache.has(q.id)) {
+        const list = await DB.getChoicesByQuestion(q.id);
+        list.sort((a, b) => (a.markerIndex || 0) - (b.markerIndex || 0));
+        choicesCache.set(q.id, list);
+      }
+      renderTextArea(q, choicesCache.get(q.id));
+    } else {
+      const imgArea = el('#solveImageArea');
+      imgArea.innerHTML = urlCache.get(q.id).map((u) => `<img src="${u}" alt="문제 이미지">`).join('');
+      imgArea.classList.toggle('layout-row', q.partsLayout === 'row');
+    }
 
     renderChoices();
     renderAnswerPanel();
@@ -316,11 +382,40 @@ const SolveUI = (() => {
     el('#solveGradeBtn').textContent = session.submitted ? '결과' : '채점';
   }
 
+  /** 이미지 대신 설문(발문)+선지를 텍스트로 보여준다. 답 선택 자체는 기존 #solveChoiceRow
+   * (①②③④⑤ 버튼)를 그대로 쓴다 — 여긴 "읽기"만 담당해서 답 선택 로직을 중복 구현하지 않는다.
+   * 원문자 마커는 화면에서 잘 안 보일 수 있어 (1)(2)(3) 식으로 바꿔 표시한다(표시용 변환만,
+   * 저장된 marker/code 값 자체는 그대로 — PDFAnalyze.prettifyMarkers 참고). */
+  function renderTextArea(q, choices) {
+    const stem = escapeHtml(PDFAnalyze.prettifyMarkers(q.stemFullText) || '(발문 텍스트를 인식하지 못했습니다)').replace(/\n/g, '<br>');
+    const choicesHtml = (choices || []).map((c) => `
+      <div class="solveTextChoice">
+        <span class="solveTextChoiceMarker">${escapeHtml(PDFAnalyze.markerToPlain(c.marker))}</span>
+        <span class="solveTextChoiceBody">${escapeHtml(PDFAnalyze.prettifyMarkers(c.text))}</span>
+      </div>`).join('');
+    const area = el('#solveTextArea');
+    area.innerHTML = `
+      ${TextViewPrefs.controlsHtml()}
+      <div class="tvReadingArea">
+        <div class="solveTextStem">${stem}</div>
+        <div class="solveTextChoices">${choicesHtml}</div>
+      </div>
+    `;
+    TextViewPrefs.applyTo(area.querySelector('.tvReadingArea'));
+    TextViewPrefs.wireControls(area, () => TextViewPrefs.applyTo(area.querySelector('.tvReadingArea')));
+  }
+
+  function onTextToggleClick() {
+    textMode = !textMode;
+    DB.setMeta(TEXT_MODE_KEY, textMode);
+    render();
+  }
+
   function renderChoices() {
     const q = questions[session.index];
     const chosen = session.userAnswers[q.id];
     const showResolved = session.submitted || session.revealed[q.id];
-    const labels = ['①', '②', '③', '④', '⑤'];
+    const labels = ['(1)', '(2)', '(3)', '(4)', '(5)'];
     el('#solveChoiceRow').innerHTML = ['1', '2', '3', '4', '5'].map((v, i) => {
       let cls = 'solveChoiceBtn';
       if (showResolved && q.answer) {
@@ -362,7 +457,7 @@ const SolveUI = (() => {
     }
     const chosen = session.userAnswers[q.id];
     const correct = chosen === String(q.answer);
-    const labels = ['①', '②', '③', '④', '⑤'];
+    const labels = ['(1)', '(2)', '(3)', '(4)', '(5)'];
     const answerLabel = labels[Number(q.answer) - 1] || q.answer;
     let line;
     if (!chosen) line = `<span class="solveAnswerLine">정답: ${answerLabel}</span>`;
@@ -449,6 +544,7 @@ const SolveUI = (() => {
   }
 
   function showResultScreen() {
+    stopTimer();
     const gradable = questions.filter((q) => q.answer);
     let correct = 0;
     gradable.forEach((q) => { if (session.userAnswers[q.id] === String(q.answer)) correct++; });
@@ -536,6 +632,7 @@ const SolveUI = (() => {
   function revokeAllUrls() {
     urlCache.forEach((arr) => arr.forEach((u) => URL.revokeObjectURL(u)));
     urlCache.clear();
+    choicesCache.clear();
   }
 
   return { init, onShow, startWithQuestions };
