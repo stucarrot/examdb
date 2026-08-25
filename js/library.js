@@ -39,6 +39,11 @@ const LibraryUI = (() => {
   let currentEditExamId = null;
   let currentView = 'questions'; // 'questions' | 'papers' | 'choices'
   let currentListMode = 'list'; // 'list' | 'card' — 문제 목록 표시 방식
+  // 모바일 문제 뷰어 전용: 글꼴/테마/이미지-텍스트 토글, 태그/정답/해설/메모 입력란을 하단
+  // 2탭(보기설정/문제정보) 오버레이 시트로 옮겨 보여줄 때 어느 시트가 열려있는지(null=닫힘).
+  // 데스크톱 폭에서는 전혀 쓰이지 않는다(레이아웃 자체가 안 바뀜).
+  let mobileSheetOpen = null; // null | 'view' | 'info'
+  const MOBILE_DETAIL_MQ = '(max-width: 600px)';
 
   function el(sel, root = document) { return root.querySelector(sel); }
   function elAll(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
@@ -178,7 +183,12 @@ const LibraryUI = (() => {
     });
     document.addEventListener('keydown', (e) => {
       if (el('#detailPanel').classList.contains('hidden')) return;
-      if (e.key === 'Escape') { closeDetail(); return; }
+      if (e.key === 'Escape') {
+        // 모바일 옵션 시트(보기설정/문제정보)가 열려있으면 그것부터 닫고, 없으면 뷰어 전체를 닫는다.
+        if (mobileSheetOpen) closeMobileSheet();
+        else closeDetail();
+        return;
+      }
       // 태그/해설/메모 등 입력창에 타이핑 중일 때는 화살표·+/-/0/PageUp/PageDown을 그대로 텍스트 입력으로 사용
       const tag = (document.activeElement && document.activeElement.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -190,10 +200,22 @@ const LibraryUI = (() => {
       else if (e.key === '-' || e.key === '_') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(detailZoom - ZOOM_STEP); } }
       else if (e.key === '0') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(1); } }
     });
-    // 뷰어가 열려 있는 동안 창 크기가 바뀌면 칸 크기가 달라지므로 줌 픽셀 계산을 다시 적용
+    // 뷰어가 열려 있는 동안 창 크기가 바뀌면 칸 크기가 달라지므로 줌 픽셀 계산을 다시 적용.
+    // 모바일↔데스크톱 폭을 오가는 경우(창 크기 조절, 회전 등)에도 대비해 옵션 UI 위치를 재정리한다.
     window.addEventListener('resize', () => {
-      if (!el('#detailPanel').classList.contains('hidden')) applyZoom();
+      if (!el('#detailPanel').classList.contains('hidden')) {
+        applyZoom();
+        layoutMobileDetailChrome();
+      }
     });
+
+    // 모바일 전용 하단 탭(보기설정/문제정보) — 탭을 누르면 해당 오버레이 시트가 열린다(다시
+    // 누르면 닫힘). 데스크톱 폭에서는 이 탭바 자체가 CSS로 숨겨져 있어 눌릴 일이 없다.
+    elAll('.detailMobileTabBtn').forEach((btn) => {
+      btn.addEventListener('click', () => toggleMobileSheet(btn.dataset.mtab));
+    });
+    el('#detailMobileSheetBackdrop').addEventListener('click', closeMobileSheet);
+    elAll('.detailMobileSheetClose').forEach((btn) => btn.addEventListener('click', closeMobileSheet));
 
     ['#examEditType', '#examEditYear', '#examEditSubject', '#examEditRound'].forEach((sel) => {
       el(sel).addEventListener('input', updateExamEditPreview);
@@ -704,6 +726,73 @@ const LibraryUI = (() => {
     await refresh();
   }
 
+  function isMobileDetailViewer() {
+    return window.matchMedia(MOBILE_DETAIL_MQ).matches;
+  }
+
+  /**
+   * 문제 뷰어의 옵션 UI(이미지-텍스트 토글 버튼, 태그/정답/해설/메모 사이드바)를 현재 화면
+   * 폭에 맞는 위치로 옮긴다 — 모바일 폭이면 하단 오버레이 시트 안으로, 데스크톱 폭이면
+   * 원래 위치(헤더/사이드바)로. 실제 DOM 노드를 그대로 이동(reparent)하는 방식이라 값/이벤트
+   * 리스너가 그대로 유지되고, 새로 그리거나 중복 생성하지 않는다. 이미 제자리에 있으면
+   * 아무것도 하지 않아서(멱등) 문제를 열 때마다 불러도 안전하다.
+   */
+  function layoutMobileDetailChrome() {
+    const mobile = isMobileDetailViewer();
+    const detailBody = document.querySelector('.detailBody');
+    const sidebar = document.querySelector('.detailSidebar');
+    const infoBody = el('#detailMobileInfoSheetBody');
+    if (sidebar && detailBody && infoBody) {
+      if (mobile && sidebar.parentElement !== infoBody) infoBody.appendChild(sidebar);
+      else if (!mobile && sidebar.parentElement !== detailBody) detailBody.appendChild(sidebar);
+    }
+
+    const modeToggle = el('#detailModeToggle');
+    const viewBody = el('#detailMobileViewSheetBody');
+    const header = document.querySelector('.detailHeader');
+    const closeBtn = el('#detailClose');
+    if (modeToggle && viewBody && header && closeBtn) {
+      if (mobile && modeToggle.parentElement !== viewBody) viewBody.insertBefore(modeToggle, viewBody.firstChild);
+      else if (!mobile && modeToggle.parentElement !== header) header.insertBefore(modeToggle, closeBtn);
+    }
+
+    if (!mobile) closeMobileSheet(); // 데스크톱 폭으로 넓어지면 열려있던 시트는 의미가 없으니 닫아둔다
+  }
+
+  function toggleMobileSheet(which) {
+    mobileSheetOpen = mobileSheetOpen === which ? null : which;
+    applyMobileSheetState();
+  }
+
+  function closeMobileSheet() {
+    if (mobileSheetOpen === null) return;
+    mobileSheetOpen = null;
+    applyMobileSheetState();
+  }
+
+  function applyMobileSheetState() {
+    const viewSheet = el('#detailMobileViewSheet');
+    const infoSheet = el('#detailMobileInfoSheet');
+    const backdrop = el('#detailMobileSheetBackdrop');
+    const tabView = el('#detailMobileTabView');
+    const tabInfo = el('#detailMobileTabInfo');
+    if (viewSheet) viewSheet.classList.toggle('open', mobileSheetOpen === 'view');
+    if (infoSheet) infoSheet.classList.toggle('open', mobileSheetOpen === 'info');
+    if (backdrop) backdrop.classList.toggle('open', !!mobileSheetOpen);
+    if (tabView) tabView.classList.toggle('active', mobileSheetOpen === 'view');
+    if (tabInfo) tabInfo.classList.toggle('active', mobileSheetOpen === 'info');
+  }
+
+  /** "보기 설정" 시트 안에 남아있을 수 있는 이전 문제의 글자크기/테마 컨트롤(.tvControls)을 지운다.
+   * 이미지 모드로 바뀌거나 텍스트 보기를 다시 그릴 때마다 호출해서, 매번 새로 만들어지는
+   * .tvControls가 시트 안에 쌓이지 않고 항상 최신 것 하나만 남도록 한다. */
+  function clearMobileViewControls() {
+    const sheetBody = el('#detailMobileViewSheetBody');
+    if (!sheetBody) return;
+    const old = sheetBody.querySelector('.tvControls');
+    if (old) old.remove();
+  }
+
   /**
    * @param {string} id 열 문제의 id
    * @param {Array|null} navList "이전 문제/다음 문제"로 이동할 목록. 생략하면 현재 필터된 목록(filtered)을
@@ -737,6 +826,13 @@ const LibraryUI = (() => {
     el('#detailMemo').value = q.memo || '';
 
     el('#detailModeToggle').classList.toggle('hidden', !q.hasTextChoices);
+    // 모바일 하단 탭 중 "보기설정"은 이 문제가 텍스트 지원이 안 되면(hasTextChoices=false)
+    // 어차피 안에 보여줄 내용이 없으므로(토글 버튼도 위에서 숨겨짐) 탭 자체를 숨긴다.
+    const mobileTabView = el('#detailMobileTabView');
+    if (mobileTabView) mobileTabView.classList.toggle('hidden', !q.hasTextChoices);
+    mobileSheetOpen = null; // 문제를 새로 열면 열려있던 옵션 시트는 닫아서 다음 문제 이미지가 바로 보이게 함
+    applyMobileSheetState();
+    layoutMobileDetailChrome();
 
     updateDetailNav();
     renderDetailBody(q);
@@ -765,7 +861,7 @@ const LibraryUI = (() => {
     el('#detailTextView').classList.toggle('hidden', mode !== 'text');
     el('#detailModeToggle').textContent = mode === 'text' ? '🖼 이미지로 보기' : '🔤 텍스트로 보기';
     if (mode === 'text') renderDetailTextView(q);
-    else renderDetailImages();
+    else { renderDetailImages(); clearMobileViewControls(); }
   }
 
   async function toggleDetailMode() {
@@ -797,6 +893,15 @@ const LibraryUI = (() => {
     `;
     TextViewPrefs.applyTo(view.querySelector('.tvReadingArea'));
     TextViewPrefs.wireControls(view, () => TextViewPrefs.applyTo(view.querySelector('.tvReadingArea')));
+    // 모바일에서는 방금 만든 글자크기/테마 컨트롤(.tvControls)을 뷰어 안에 그대로 두지 않고
+    // 하단 "보기 설정" 시트로 옮긴다(리스너는 위에서 이미 연결했으므로 옮겨도 그대로 동작).
+    // 매번 새로 만들어지므로, 시트에 남아있던 이전 문제의 컨트롤은 먼저 지운다.
+    clearMobileViewControls();
+    if (isMobileDetailViewer()) {
+      const tv = view.querySelector('.tvControls');
+      const sheetBody = el('#detailMobileViewSheetBody');
+      if (tv && sheetBody) sheetBody.appendChild(tv);
+    }
   }
 
   /** 상단바의 "이전 문제/다음 문제" 버튼 활성/비활성 상태 및 위치 표시(n / 전체) 갱신 */
@@ -911,6 +1016,8 @@ const LibraryUI = (() => {
     detailNavList = [];
     detailNavIndex = -1;
     zoomPanState = null;
+    mobileSheetOpen = null;
+    applyMobileSheetState();
   }
 
   async function saveDetail() {

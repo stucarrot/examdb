@@ -372,8 +372,8 @@
       </div>
       <div class="spacer"></div>
       <div class="detailNavQGroup">
-        <button id="detailPrevQBtn" class="btnGhost detailNavQBtn" title="이전 문제 (Page Up)">◀ 이전 문제</button>
-        <button id="detailNextQBtn" class="btnGhost detailNavQBtn" title="다음 문제 (Page Down)">다음 문제 ▶</button>
+        <button id="detailPrevQBtn" class="btnGhost detailNavQBtn" title="이전 문제 (Page Up)"><span class="detailNavQIcon">◀</span><span class="detailNavQText"> 이전 문제</span></button>
+        <button id="detailNextQBtn" class="btnGhost detailNavQBtn" title="다음 문제 (Page Down)"><span class="detailNavQText">다음 문제 </span><span class="detailNavQIcon">▶</span></button>
       </div>
       <div id="detailZoomBar" class="detailZoomBar">
         <button id="detailZoomOutBtn" class="btnGhost detailZoomBtn" title="축소 (-)">－</button>
@@ -419,6 +419,30 @@
           </div>
         </div>
       </aside>
+    </div>
+
+    <!-- 모바일 전용 하단 옵션바 + 오버레이 시트: 글꼴/테마/이미지-텍스트 토글과 태그·정답·해설·메모
+         입력란을 여기로 옮겨 보여준다(js/library.js의 layoutMobileDetailChrome()이 실제 엘리먼트를
+         이 안으로 옮겨 넣는다). 데스크톱 폭에서는 CSS로 전부 숨겨지고, 원래 위치(헤더/사이드바)의
+         엘리먼트가 그대로 쓰인다 — 데스크톱 뷰어 동작은 변경하지 않는다. -->
+    <div class="detailMobileTabBar" id="detailMobileTabBar">
+      <button type="button" class="detailMobileTabBtn" id="detailMobileTabView" data-mtab="view">🎨 보기설정</button>
+      <button type="button" class="detailMobileTabBtn" id="detailMobileTabInfo" data-mtab="info">📝 문제정보</button>
+    </div>
+    <div class="detailMobileSheetBackdrop" id="detailMobileSheetBackdrop"></div>
+    <div class="detailMobileSheet" id="detailMobileViewSheet">
+      <div class="detailMobileSheetHead">
+        <span>보기 설정</span>
+        <button type="button" class="btnGhost detailMobileSheetClose">✕</button>
+      </div>
+      <div class="detailMobileSheetBody" id="detailMobileViewSheetBody"></div>
+    </div>
+    <div class="detailMobileSheet" id="detailMobileInfoSheet">
+      <div class="detailMobileSheetHead">
+        <span>문제 정보</span>
+        <button type="button" class="btnGhost detailMobileSheetClose">✕</button>
+      </div>
+      <div class="detailMobileSheetBody" id="detailMobileInfoSheetBody"></div>
     </div>
   </div>
 </div>
