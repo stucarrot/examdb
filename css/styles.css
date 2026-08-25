@@ -726,6 +726,23 @@ textarea { resize: vertical; }
 .tvBtn:hover { opacity: 1; }
 .tvBtn.active { background: var(--accent); border-color: var(--accent); color: #fff; opacity: 1; }
 
+/* 문제풀이(solve.js) 전용: 글자크기/테마 패널을 기본은 접어서 문제 공간을 확보하고,
+   토글 버튼을 눌렀을 때만 .tvControls가 펼쳐지는 아코디언. 라이브러리 문제 뷰어 쪽은
+   이 wrap을 안 쓰고 .tvControls를 그대로 쓰므로 영향 없음. */
+.tvControlsWrap { flex-shrink: 0; margin-bottom: 10px; }
+.tvControlsToggle {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  border: 1px solid rgba(127,127,127,.3); background: rgba(127,127,127,.08); color: inherit;
+  border-radius: 8px; padding: 8px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  font-family: inherit; opacity: .85;
+}
+.tvControlsToggle:hover { opacity: 1; }
+.tvControlsChevron { opacity: .7; }
+.tvControlsPanel { margin-top: 8px; }
+.tvControlsPanel .tvControls { margin-bottom: 0; } /* wrap 자체 margin-bottom과 중복 방지 */
+.tvControlsWrap.collapsed { margin-bottom: 10px; }
+.tvControlsWrap.collapsed .tvControlsPanel { display: none; }
+
 .tvReadingArea { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 26px 30px; border-radius: 8px; box-sizing: border-box; }
 
 .tvFont-sm .detailTextStem, .tvFont-sm .solveTextStem { font-size: 14px; line-height: 1.6; }

@@ -24,6 +24,11 @@ const SolveUI = (() => {
   let urlCache = new Map();   // qid -> [objectURL, ...]
   let choicesCache = new Map(); // qid -> choices[] (텍스트 보기용, hasTextChoices인 문제만 채워짐)
   let textMode = false;       // 이미지 대신 텍스트로 풀기 — 설정을 기억해뒀다가 다음 진입 때도 이어서 씀
+  // 텍스트로 풀기 화면의 글자크기/테마 설정 패널 — 문제 공간을 최대한 확보하기 위해
+  // 기본은 접힌 상태(true)로 시작한다. 사용자가 한 번 펼치면 문제를 넘기거나 드로어를
+  // 열어도 그 상태 그대로 유지되고(module-level 변수라 브라우저 새로고침 전까지는 안 잊음),
+  // 다시 접고 싶으면 토글 버튼을 눌러 접으면 된다.
+  let solveTvCollapsed = true;
   let drawerOpen = false;
   let touchState = null;      // 스와이프 제스처 추적
 
@@ -395,7 +400,12 @@ const SolveUI = (() => {
       </div>`).join('');
     const area = el('#solveTextArea');
     area.innerHTML = `
-      ${TextViewPrefs.controlsHtml()}
+      <div class="tvControlsWrap${solveTvCollapsed ? ' collapsed' : ''}" id="solveTvWrap">
+        <button type="button" class="tvControlsToggle" id="solveTvToggle">
+          <span>🎨 글자·테마 설정</span><span class="tvControlsChevron">${solveTvCollapsed ? '▸' : '▾'}</span>
+        </button>
+        <div class="tvControlsPanel">${TextViewPrefs.controlsHtml()}</div>
+      </div>
       <div class="tvReadingArea">
         <div class="solveTextStem">${stem}</div>
         <div class="solveTextChoices">${choicesHtml}</div>
@@ -403,6 +413,14 @@ const SolveUI = (() => {
     `;
     TextViewPrefs.applyTo(area.querySelector('.tvReadingArea'));
     TextViewPrefs.wireControls(area, () => TextViewPrefs.applyTo(area.querySelector('.tvReadingArea')));
+    // 설정 패널 자체는 이미 그려져 있으므로(controlsHtml 안의 버튼들), 펼치기/접기 버튼은
+    // 다시 그리지 않고 접힘 클래스와 화살표 방향만 토글한다 — 읽던 스크롤 위치 등을 안 건드림.
+    el('#solveTvToggle').addEventListener('click', () => {
+      solveTvCollapsed = !solveTvCollapsed;
+      const wrap = el('#solveTvWrap');
+      wrap.classList.toggle('collapsed', solveTvCollapsed);
+      wrap.querySelector('.tvControlsChevron').textContent = solveTvCollapsed ? '▸' : '▾';
+    });
   }
 
   function onTextToggleClick() {
