@@ -668,6 +668,29 @@
         <option value="exam-qnum">시험명 → 문제번호 순</option>
       </select>
     </label>
+    <label>시험지 레이아웃
+      <select id="exportLayout">
+        <option value="single">기존 방식 (문제 이미지 그대로, 1단)</option>
+        <option value="twocol">2단 편집 (실제 시험지처럼 — 제목/구분선/쪽번호 포함)</option>
+      </select>
+    </label>
+
+    <label class="checkboxLabel">
+      <input type="checkbox" id="exportRandomSplitChk">
+      이 범위에서 무작위로 뽑아 여러 시험지로 나누기
+    </label>
+    <div class="exportSplitFields hidden" id="exportSplitFields">
+      <div class="exportInlineOptionsRow">
+        <label>총 문제 수 (N)
+          <input type="number" id="exportRandomN" min="1" step="1">
+        </label>
+        <label>시험지 개수 (K)
+          <input type="number" id="exportRandomK" min="1" step="1" value="1">
+        </label>
+      </div>
+      <p class="hint" id="exportSplitHint" style="margin:0;"></p>
+    </div>
+
     <label class="checkboxLabel"><input type="checkbox" id="exportAnswerChk"> 맨 뒤에 정답 요약 페이지 포함</label>
     <div class="exportInlineOptionsRow">
       <label class="checkboxLabel"><input type="checkbox" id="exportInlineAnswerChk"> 각 문제 끝에 정답 표시(회색 글씨)</label>
@@ -755,6 +778,7 @@
 <!-- 라이브러리(pdf.js, pdf-lib) — CDN, 무료 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script src="js/db.js"></script>
 <script src="js/pdfAnalyze.js"></script>

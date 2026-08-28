@@ -888,7 +888,6 @@ const LibraryUI = (() => {
       <div class="tvReadingArea">
         <div class="detailTextStem">${stem}</div>
         <div class="detailTextChoices">${choicesHtml}</div>
-        <p class="hint" style="margin-top:10px;">텍스트는 PDF에서 자동 추출된 것이라 오탈자가 있을 수 있습니다. 정확한 원문은 언제든 "🖼 이미지로 보기"로 확인하세요.</p>
       </div>
     `;
     TextViewPrefs.applyTo(view.querySelector('.tvReadingArea'));
