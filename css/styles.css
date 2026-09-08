@@ -688,7 +688,10 @@ textarea { resize: vertical; }
 .solveTimer {
   flex-shrink: 0; font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700;
   color: #c7cbe0; background: #262a38; border-radius: 8px; padding: 7px 8px; white-space: nowrap;
+  cursor: pointer; border: 1px solid transparent; user-select: none;
 }
+.solveTimer:hover { background: #323749; border-color: rgba(255,255,255,.15); }
+.solveTimer:active { opacity: .8; }
 .solveGradeBtn { flex-shrink: 0; padding: 8px 14px; font-size: 13px; }
 
 .solveImageArea {
@@ -824,10 +827,11 @@ textarea { resize: vertical; }
   aspect-ratio: 1; border: 1px solid #343953; background: #232637; color: #eef0f8; border-radius: 8px;
   font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center;
 }
-.solveDrawerBtn.answered { background: #2c3550; border-color: var(--accent); }
-.solveDrawerBtn.current { outline: 2px solid var(--accent); }
-.solveDrawerBtn.correct { background: #1c8a5a; border-color: #1c8a5a; }
-.solveDrawerBtn.wrong { background: #b3413a; border-color: #b3413a; }
+.solveDrawerBtn.answered { background: var(--accent); border-color: var(--accent); color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+.solveDrawerBtn.current { outline: 2px solid #fff; outline-offset: 1px; }
+/* 정답(초록)/오답(빨강) 배경 위에서 번호가 또렷이 보이도록 텍스트를 순백+그림자로 강조 */
+.solveDrawerBtn.correct { background: #1c8a5a; border-color: #1c8a5a; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+.solveDrawerBtn.wrong { background: #b3413a; border-color: #b3413a; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
 .solveDrawerFoot { flex: 0 0 auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #2c3040; }
 .solveDrawerNewBtn { width: 100%; color: #ff8a82; font-size: 12.5px; }
 

@@ -14,6 +14,7 @@
 const SolveUI = (() => {
   const SESSION_KEY = 'solveSession';
   const TEXT_MODE_KEY = 'solveTextModePref';
+  const TIMER_MODE_KEY = 'solveTimerModePref';
 
   let allQuestions = [];      // 설정 화면 필터링용 전체 문제 캐시
   let matched = [];           // 현재 필터 조건에 맞는 문제들
@@ -33,9 +34,14 @@ const SolveUI = (() => {
   let touchState = null;      // 스와이프 제스처 추적
 
   // ---- 문제별 체류 시간 타이머 ----
-  // "지금 보고 있는 문제에 얼마나 머물렀는지"만 보여주는 단순 스톱워치. 다른
-  // 문제로 이동하거나, 채점하거나, 나갔다 다시 들어오면 그때마다 0초로
-  // 초기화된다(문제 간 시간을 누적하지 않음 — 순수하게 "지금 이 문제"용).
+  // 실제 경과 시간 누적(session.timeSpent[qid])은 항상 배경에서 계속 이뤄지고,
+  // 화면에 "무엇을 보여줄지"만 timerMode로 토글한다:
+  //  - 'perVisit'(기본): 지금 이 문제에 "방금 들어온 뒤로" 흐른 시간만(다른 문제로
+  //    이동/채점/나갔다 재진입하면 0초로 다시 시작 — 예전 요청대로).
+  //  - 'cumulative': 이번 문제풀이 세션에서 이 문제에 "지금까지 머문 총 시간"
+  //    (여러 번 들락날락한 시간을 다 더한 값 + 지금 보는 중인 시간).
+  // 타이머 배지(#solveTimer)를 클릭하면 두 모드를 토글(onTimerToggleClick).
+  let timerMode = 'perVisit';
   let timerInterval = null;
   let timerQid = null;
   let timerStartTs = 0;
@@ -73,6 +79,7 @@ const SolveUI = (() => {
     el('#solveRevealBtn').addEventListener('click', onRevealClick);
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
     el('#solveTextToggle').addEventListener('click', onTextToggleClick);
+    el('#solveTimer').addEventListener('click', onTimerToggleClick);
 
     // ---- 드로어(문제 목록) ----
     el('#solveListBtn').addEventListener('click', openDrawer);
@@ -101,10 +108,16 @@ const SolveUI = (() => {
     allQuestions = await DB.getAllQuestions();
     await refreshSetupScreen();
     textMode = !!(await DB.getMeta(TEXT_MODE_KEY));
+    const savedTimerMode = await DB.getMeta(TIMER_MODE_KEY);
+    if (savedTimerMode === 'cumulative' || savedTimerMode === 'perVisit') timerMode = savedTimerMode;
 
     const persisted = await DB.getMeta(SESSION_KEY);
     if (persisted && persisted.questionIds && persisted.questionIds.length && !persisted.submitted) {
       session = persisted;
+      // 예전 세션(이 필드들이 생기기 전에 저장된)을 이어 열 때를 대비한 방어적 기본값.
+      session.revealed = session.revealed || {};
+      session.checkResults = session.checkResults || {};
+      session.timeSpent = session.timeSpent || {};
       await hydrateSessionQuestions();
       if (questions.length) { openOverlay(); return; }
       // 문제가 이미 삭제된 등 이어받을 게 없으면 세션을 정리하고 설정 화면으로.
@@ -262,6 +275,8 @@ const SolveUI = (() => {
       index: 0,
       userAnswers: {},
       revealed: {},
+      checkResults: {},  // qid -> 'correct' | 'wrong' (가장 마지막으로 "정답 확인"한 결과 — 문제 목록 색상용)
+      timeSpent: {},     // qid -> 이번 문제풀이 세션에서 그 문제에 누적으로 머문 초(누적 타이머 모드용)
       submitted: false,
       filterLabel,
       createdAt: Date.now(),
@@ -276,6 +291,7 @@ const SolveUI = (() => {
     const slim = {
       id: session.id, questionIds: session.questionIds, index: session.index,
       userAnswers: session.userAnswers, revealed: session.revealed,
+      checkResults: session.checkResults, timeSpent: session.timeSpent,
       submitted: session.submitted,
       filterLabel: session.filterLabel, createdAt: session.createdAt, updatedAt: session.updatedAt,
     };
@@ -304,7 +320,9 @@ const SolveUI = (() => {
     // 세션은 이미 답을 바꿀 때마다 저장돼 있으므로 그냥 화면만 닫는다(다음에 이 탭에
     // 들어오면 자동으로 이어서 풀이가 열림). 여기서 onShow()를 다시 부르면 방금 닫은
     // 화면이 곧바로 재오픈되어버리므로 설정 화면 새로고침만 한다.
-    stopTimer(); // 나갔다 다시 들어오면 타이머는 항상 0초부터 — 인터벌만 정리하면 충분(누적 저장 없음)
+    stopTimer(); // perVisit 표시는 나갔다 들어오면 항상 0초부터 다시 시작하지만, 누적값(session.timeSpent)은
+                 // 계속 유지되도록 확정 누적하고 세션에 저장해둔다(누적 타이머 모드가 이어서 보여야 하므로).
+    persistSession();
     revokeAllUrls();
     el('#solveOverlay').classList.add('hidden');
     refreshSetupScreen();
@@ -312,12 +330,20 @@ const SolveUI = (() => {
 
   async function goTo(idx) {
     if (idx < 0 || idx >= questions.length) return;
+    stopTimer(); // 문제를 벗어나기 전에 지금까지 머문 시간을 session.timeSpent에 확정 누적
     session.index = idx;
     await persistSession();
     render();
   }
 
+  /** 지금 보고 있던 문제의 방금 구간(timerStartTs~지금)을 session.timeSpent에 누적하고
+   * 인터벌을 멈춘다. 화면에 뭘 보여주는지(timerMode)와 무관하게 실제 누적은 항상 여기서
+   * 이뤄진다 — "누적" 모드는 이렇게 계속 쌓인 값을 그냥 보여주기만 하는 것뿐이다. */
   function stopTimer() {
+    if (timerQid) {
+      const elapsedSec = Math.floor((Date.now() - timerStartTs) / 1000);
+      session.timeSpent[timerQid] = (session.timeSpent[timerQid] || 0) + elapsedSec;
+    }
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     timerQid = null;
   }
@@ -331,21 +357,38 @@ const SolveUI = (() => {
   }
 
   /** render()가 매번 호출돼도(답 선택, 텍스트 토글 등으로 같은 문제를 다시 그릴 때) 타이머가
-   * 리셋되지 않게 하되, 문제가 실제로 바뀌었을 때는 무조건 0초부터 다시 시작한다(요청대로
-   * 문제 간 시간을 이어서 누적하지 않음). */
+   * 리셋되지 않게 하되, 문제가 실제로 바뀌면 지금까지 구간을 확정 누적(stopTimer)하고 새
+   * 구간을 시작한다. */
   function ensureTimerFor(qid) {
     if (timerQid === qid && timerInterval) return;
+    stopTimer();
     startTimer(qid);
+  }
+
+  /** 타이머 배지를 눌러 "방금 들어온 뒤 경과 시간(perVisit)"과 "이번 문제풀이에서 이 문제에
+   * 머문 총 누적 시간(cumulative)" 표시를 토글한다. 실제 누적 자체는 항상 진행 중이므로
+   * 토글해도 시간이 끊기거나 리셋되지 않는다. */
+  function onTimerToggleClick() {
+    timerMode = timerMode === 'cumulative' ? 'perVisit' : 'cumulative';
+    DB.setMeta(TIMER_MODE_KEY, timerMode);
+    updateTimerDisplay();
   }
 
   function updateTimerDisplay() {
     if (!timerQid) return;
-    const totalSec = Math.floor((Date.now() - timerStartTs) / 1000);
+    const elapsedSec = Math.floor((Date.now() - timerStartTs) / 1000);
+    const totalSec = timerMode === 'cumulative'
+      ? (session.timeSpent[timerQid] || 0) + elapsedSec
+      : elapsedSec;
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
-    const label = `⏱ ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    const icon = timerMode === 'cumulative' ? '⏱Σ' : '⏱';
     const timerEl = el('#solveTimer');
-    if (timerEl) timerEl.textContent = label;
+    if (!timerEl) return;
+    timerEl.textContent = `${icon} ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    timerEl.title = timerMode === 'cumulative'
+      ? '이 문제풀이에서 이 문제에 머문 총 누적 시간 (클릭하면 "방금 들어온 뒤 경과 시간"으로 전환)'
+      : '이 문제에 방금 들어온 뒤 경과한 시간 (클릭하면 "누적 시간"으로 전환)';
   }
 
   async function render() {
@@ -452,6 +495,7 @@ const SolveUI = (() => {
     const q = questions[session.index];
     if (session.submitted) return;
     session.userAnswers[q.id] = btn.dataset.value;
+    delete session.checkResults[q.id]; // 답을 바꿨으니 이전 "정답 확인" 결과는 더 이상 유효하지 않음 — 다시 확인 전까진 중립(답변함) 색으로
     persistSession();
     render();
   }
@@ -459,8 +503,21 @@ const SolveUI = (() => {
   function onRevealClick() {
     const q = questions[session.index];
     session.revealed[q.id] = !session.revealed[q.id];
+    // 정답을 "확인"하는 순간(패널을 열 때)의 결과를 기록해둔다 — 문제 목록 색상은 패널을
+    // 다시 닫아도(revealed=false) 이 값을 그대로 유지해서 "가장 마지막에 정답 확인한
+    // 결과"를 계속 보여준다.
+    if (session.revealed[q.id]) recordCheckResult(q);
     persistSession();
     render();
+  }
+
+  /** q의 현재 선택 답을 정답과 비교해 session.checkResults에 기록한다. 답을 아예 고르지
+   * 않았거나 정답이 등록 안 된 문제는 기록하지 않는다(문제 목록에서 색이 안 붙어야 함). */
+  function recordCheckResult(q) {
+    if (!q.answer) { delete session.checkResults[q.id]; return; }
+    const chosen = session.userAnswers[q.id];
+    if (!chosen) { delete session.checkResults[q.id]; return; }
+    session.checkResults[q.id] = chosen === String(q.answer) ? 'correct' : 'wrong';
   }
 
   function renderAnswerPanel() {
@@ -498,6 +555,9 @@ const SolveUI = (() => {
     grid.innerHTML = questions.map((q, i) => `<button class="solveDrawerBtn" data-idx="${i}">${i + 1}</button>`).join('');
   }
 
+  /** 안 푼 문제는 그냥 기본 색(아무 클래스 없음), 푼 문제 중 "가장 마지막으로 정답을
+   * 확인"한 결과가 있으면 정답=초록/오답=빨강, 답은 골랐지만 아직 확인 전이면 기존
+   * "답변함"(answered) 색을 그대로 쓴다. */
   function updateDrawerHighlight() {
     elAll('.solveDrawerBtn').forEach((btn) => {
       const i = Number(btn.dataset.idx);
@@ -505,11 +565,10 @@ const SolveUI = (() => {
       btn.classList.toggle('current', i === session.index);
       btn.classList.remove('answered', 'correct', 'wrong');
       const chosen = session.userAnswers[q.id];
-      if (session.submitted && q.answer) {
-        btn.classList.add(chosen === String(q.answer) ? 'correct' : (chosen ? 'wrong' : 'answered'));
-      } else if (chosen) {
-        btn.classList.add('answered');
-      }
+      const result = session.checkResults[q.id];
+      if (result === 'correct') btn.classList.add('correct');
+      else if (result === 'wrong') btn.classList.add('wrong');
+      else if (chosen) btn.classList.add('answered');
     });
   }
 
@@ -556,6 +615,7 @@ const SolveUI = (() => {
 
   async function gradeAndShow() {
     if (!confirm('채점할까요? 채점 후에는 답을 바꿀 수 없습니다.')) return;
+    questions.forEach((q) => recordCheckResult(q)); // 채점 = 전체 문제를 한 번에 "정답 확인"한 것으로 취급
     session.submitted = true;
     await persistSession(); // submitted=true라 내부적으로 세션을 지움(이어풀기 목록에서 제거)
     showResultScreen();
