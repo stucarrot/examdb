@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>객관식 문제은행 매니저</title>
 <link rel="stylesheet" href="css/styles.css">
+<!-- 해설 수식 렌더링(KaTeX). CSS는 head에서, JS는 body 하단에서 defer 로드 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css"
+  integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
 </head>
 <body>
 
@@ -196,6 +199,7 @@
           <button id="btnCbtFromSelection" class="btnSecondary">▶ 문제풀이로 보내기</button>
           <button id="btnExportFromSelection" class="btnSecondary">⇩ PDF로 내보내기</button>
           <button id="btnBulkMeta" class="btnSecondary">문제정보 일괄변경</button>
+          <button id="btnBulkAiExplain" class="btnSecondary">🤖 AI 해설 생성</button>
           <button id="btnDeleteSelection" class="btnDanger" disabled>삭제</button>
         </div>
       </div>
@@ -230,6 +234,7 @@
           <div class="spacer"></div>
           <button id="btnChoiceBulkTag" class="btnSecondary">🏷 태그 일괄추가</button>
           <button id="btnChoiceBulkOx" class="btnSecondary">OX 일괄지정</button>
+          <button id="btnChoiceBulkAiExplain" class="btnSecondary">🤖 AI 해설 생성</button>
           <button id="btnExportChoices" class="btnSecondary">⇩ 선지목록 내보내기</button>
           <button id="btnDeleteChoices" class="btnDanger" disabled>삭제</button>
         </div>
@@ -320,6 +325,30 @@
     </div>
 
     <div class="card">
+      <h2>🤖 AI 자동 해설 (Google AI Studio / Gemini)</h2>
+      <p class="hint">문제·선지 화면의 "🤖 AI 해설 생성" 버튼이 이 설정을 사용합니다. API 키는
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>에서
+        무료로 발급받을 수 있고, <b>이 브라우저(이 컴퓨터)에만</b> 저장됩니다 — 백업 파일이나 다른 기기로
+        자동으로 옮겨지지 않으니, 새 기기에서도 쓰려면 그 기기에서 다시 입력해야 합니다. 이 앱은 서버가
+        없어서 키를 브라우저가 구글 API로 직접 전송하는 구조이니, 공용 컴퓨터에서는 등록해두지 마세요.</p>
+      <label>Gemini API 키
+        <input type="password" id="aiApiKeyInput" placeholder="AIza...">
+      </label>
+      <label>모델
+        <input type="text" id="aiModelInput" placeholder="gemini-flash-latest">
+      </label>
+      <p class="hint" style="margin:2px 0 10px;">비워두면 <code>gemini-flash-latest</code>(구글이 계속 최신 flash
+        모델로 갱신해주는 별칭)를 씁니다. AI Studio에서 다른 모델을 쓰고 싶으면 정확한 모델 ID를 입력하세요.</p>
+      <label class="checkboxLabel"><input type="checkbox" id="aiGroundingChk" checked>
+        구글 검색으로 근거를 찾아 반영(권장) — 법령·판례·통계처럼 최신성이 중요한 내용의 환각을 줄여줍니다.</label>
+      <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button id="aiSettingsSaveBtn" class="btnPrimary">저장</button>
+        <button id="aiSettingsTestBtn" class="btnSecondary">연결 테스트</button>
+        <span id="aiSettingsStatus" class="statusText"></span>
+      </div>
+    </div>
+
+    <div class="card">
       <h2 class="dangerTitle">위험 구역</h2>
       <p class="hint">아래 작업은 되돌릴 수 없습니다. 실행 전 위 백업을 먼저 받아두는 것을 권장합니다.</p>
       <button id="btnClearAll" class="btnDanger">전체 데이터 삭제</button>
@@ -327,6 +356,21 @@
   </section>
 
 </main>
+
+<!-- ===================== AI 해설 일괄 생성 진행 모달 (library.js/choices.js 공용) ===================== -->
+<div id="aiExplainBatchModal" class="overlay hidden">
+  <div class="modalBox">
+    <h2 id="aiExplainBatchTitle">AI 해설 일괄 생성</h2>
+    <p class="hint" id="aiExplainBatchHint"></p>
+    <div class="aiExplainProgressBar"><div id="aiExplainBatchFill" class="aiExplainProgressFill" style="width:0%"></div></div>
+    <p id="aiExplainBatchStatus" class="statusText">0 / 0</p>
+    <div id="aiExplainBatchLog" class="aiExplainBatchLog"></div>
+    <div class="modalActions">
+      <button id="aiExplainBatchCancelBtn" class="btnGhost">중단</button>
+      <button id="aiExplainBatchCloseBtn" class="btnPrimary hidden">닫기</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===================== 문제지 편집 모달 ===================== -->
 <div id="examEditModal" class="overlay hidden">
@@ -408,7 +452,16 @@
             </select>
           </label>
           <label>해설
-            <textarea id="detailExplanation" rows="8" placeholder="해설을 붙여넣거나 직접 작성하세요."></textarea>
+            <div class="explainFieldHead">
+              <div class="explainTabs">
+                <button type="button" id="detailExplainEditTab" class="explainTabBtn active">✏️ 편집</button>
+                <button type="button" id="detailExplainPreviewTab" class="explainTabBtn">👁 미리보기</button>
+              </div>
+              <button type="button" id="detailExplainAiBtn" class="btnSecondary small">🤖 AI 해설 생성</button>
+            </div>
+            <textarea id="detailExplanation" rows="8" placeholder="해설을 붙여넣거나 직접 작성하세요. 마크다운과 수식(인라인 \( \), 블록 $$ $$)을 지원합니다."></textarea>
+            <div id="detailExplanationPreview" class="markdownBody detailExplanationPreview hidden"></div>
+            <p id="detailExplainAiStatus" class="statusText"></p>
           </label>
           <label>메모
             <textarea id="detailMemo" rows="3" placeholder="개인 메모"></textarea>
@@ -737,6 +790,7 @@
           <span id="solveProgressLabel" class="solveProgressLabel">1 / 1</span>
         </div>
         <button id="solveRevealBtn" class="solveNavBtn">정답보기</button>
+        <button id="solveExplainBtn" class="solveNavBtn" disabled title="정답을 확인하면 이용할 수 있습니다">📖 해설</button>
         <button id="solveNextBtn" class="solveNavBtn">다음 ▶</button>
       </div>
     </div>
@@ -775,13 +829,37 @@
   </div>
 </div>
 
+<!-- ===================== 문제풀이 해설 팝업 (정답 확인 후 이용 가능) ===================== -->
+<div id="solveExplainModal" class="overlay hidden">
+  <div class="modalBox solveExplainBox">
+    <div class="solveExplainHead">
+      <h2>해설</h2>
+      <button id="solveExplainCloseBtn" class="btnGhost">✕ 닫기</button>
+    </div>
+    <div id="solveExplainBody" class="markdownBody solveExplainBody"></div>
+    <div id="solveExplainGenWrap" class="solveExplainGenWrap hidden">
+      <button id="solveExplainGenBtn" class="btnPrimary">🤖 AI 해설 생성</button>
+      <p id="solveExplainGenStatus" class="statusText"></p>
+    </div>
+  </div>
+</div>
+
 <!-- 라이브러리(pdf.js, pdf-lib) — CDN, 무료 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- 해설 렌더링(마크다운+수식): marked(마크다운) → DOMPurify(정제) → KaTeX(수식) 순서로 적용 -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js"
+  integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"
+  integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
 
 <script src="js/db.js"></script>
 <script src="js/pdfAnalyze.js"></script>
+<script src="js/markdownRender.js"></script>
+<script src="js/aiExplain.js"></script>
 <script src="js/tagger.js"></script>
 <script src="js/textViewPrefs.js"></script>
 <script src="js/importMemory.js"></script>

@@ -749,6 +749,7 @@ const ImportUI = (() => {
             text: c.text,
             tags: question.tags.slice(), // "태그(기존활용)": 소속 문제의 태그를 기본값으로 물려받아 시작
             ox: null, // 'O' | 'X' | null(미정) — 라이브러리 "선지 보기"에서 체크
+            explanation: '', // AI 자동 해설 생성 또는 직접 작성(choices.js, aiExplain.js 참고)
             memo: '',
             createdAt: Date.now(),
           }));

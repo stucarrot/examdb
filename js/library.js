@@ -106,6 +106,7 @@ const LibraryUI = (() => {
       if (list.length) window.ExportPDF.openExportDialog(list);
     });
     el('#btnDeleteSelection').addEventListener('click', onDeleteSelected);
+    el('#btnBulkAiExplain').addEventListener('click', onBulkAiExplain);
     el('#btnBulkMeta').addEventListener('click', () => {
       const list = getSelectedOrConfirmAll();
       if (!list.length) return;
@@ -145,6 +146,9 @@ const LibraryUI = (() => {
     el('#detailClose').addEventListener('click', closeDetail);
     el('#detailSave').addEventListener('click', saveDetail);
     el('#detailDelete').addEventListener('click', deleteDetail);
+    el('#detailExplainEditTab').addEventListener('click', () => setDetailExplainTab('edit'));
+    el('#detailExplainPreviewTab').addEventListener('click', () => setDetailExplainTab('preview'));
+    el('#detailExplainAiBtn').addEventListener('click', onDetailAiExplain);
     el('#detailViewToggle').addEventListener('click', toggleDetailViewMode);
     el('#detailModeToggle').addEventListener('click', toggleDetailMode);
     el('#detailPrevBtn').addEventListener('click', () => stepDetailImage(-1));
@@ -824,6 +828,8 @@ const LibraryUI = (() => {
     el('#detailAnswer').value = q.answer || '';
     el('#detailExplanation').value = q.explanation || '';
     el('#detailMemo').value = q.memo || '';
+    el('#detailExplainAiStatus').textContent = '';
+    setDetailExplainTab('edit');
 
     el('#detailModeToggle').classList.toggle('hidden', !q.hasTextChoices);
     // 모바일 하단 탭 중 "보기설정"은 이 문제가 텍스트 지원이 안 되면(hasTextChoices=false)
@@ -1017,6 +1023,74 @@ const LibraryUI = (() => {
     zoomPanState = null;
     mobileSheetOpen = null;
     applyMobileSheetState();
+  }
+
+  /** 해설 필드의 "편집"/"미리보기" 탭 전환. 미리보기로 넘어갈 때만 렌더링해서(마크다운+수식
+   * 파싱은 살짝 무겁다) 편집 중에는 매 타이핑마다 다시 그리지 않는다. */
+  function setDetailExplainTab(mode) {
+    const isPreview = mode === 'preview';
+    el('#detailExplainEditTab').classList.toggle('active', !isPreview);
+    el('#detailExplainPreviewTab').classList.toggle('active', isPreview);
+    el('#detailExplanation').classList.toggle('hidden', isPreview);
+    const previewEl = el('#detailExplanationPreview');
+    previewEl.classList.toggle('hidden', !isPreview);
+    if (isPreview) MarkdownRender.renderIntoOrPlaceholder(previewEl, el('#detailExplanation').value);
+  }
+
+  async function onDetailAiExplain() {
+    if (!currentDetailId) return;
+    const apiKey = await AIExplain.getApiKey();
+    if (!apiKey) { alert('먼저 "설정" 탭에서 Gemini API 키를 등록해주세요.'); return; }
+    const textarea = el('#detailExplanation');
+    if (textarea.value.trim() && !confirm('이미 작성된 해설이 있습니다. AI로 새로 생성해서 덮어쓸까요?\n(저장 버튼을 누르기 전까지는 실제로 저장되지 않습니다)')) return;
+
+    const btn = el('#detailExplainAiBtn');
+    const status = el('#detailExplainAiStatus');
+    btn.disabled = true;
+    status.textContent = '🤖 이미지를 분석해서 해설을 생성하는 중… (검색 근거를 함께 확인하면 조금 더 걸릴 수 있어요)';
+    try {
+      const q = await DB.getQuestion(currentDetailId);
+      const blobs = await DB.getImageBlobs(q);
+      const text = await AIExplain.generateForQuestion(q, blobs);
+      textarea.value = text;
+      status.textContent = '생성 완료 — "저장"을 눌러야 반영됩니다.';
+      if (!el('#detailExplainPreviewTab').classList.contains('active')) setDetailExplainTab('edit');
+      else setDetailExplainTab('preview');
+    } catch (err) {
+      console.error(err);
+      status.textContent = '오류: ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /** 선택된 문제 중 해설이 비어있는 것만 골라 AI로 일괄 생성(진행 모달, aiExplain.js 공용). */
+  async function onBulkAiExplain() {
+    const list = getSelectedOrConfirmAll();
+    if (!list.length) return;
+    const apiKey = await AIExplain.getApiKey();
+    if (!apiKey) { alert('먼저 "설정" 탭에서 Gemini API 키를 등록해주세요.'); return; }
+    await AIExplain.openBatchModal({
+      title: 'AI 해설 일괄 생성 (문제)',
+      hint: `${list.length}개 중 해설이 비어있는 문제만 생성합니다.`,
+      items: list,
+      skip: (q) => !!(q.explanation && q.explanation.trim()),
+      itemLabel: (q) => q.code || `${q.qnum}번`,
+      task: async (q) => {
+        const fresh = await DB.getQuestion(q.id);
+        if (!fresh) return;
+        const blobs = await DB.getImageBlobs(fresh);
+        const text = await AIExplain.generateForQuestion(fresh, blobs);
+        fresh.explanation = text;
+        await DB.updateQuestion(fresh);
+        q.explanation = text; // 화면에 캐시된 목록(fullList/filtered)도 함께 갱신
+      },
+    });
+    await refresh();
+    if (currentDetailId && el('#detailPanel') && !el('#detailPanel').classList.contains('hidden')) {
+      const q = await DB.getQuestion(currentDetailId);
+      if (q) { el('#detailExplanation').value = q.explanation || ''; setDetailExplainTab('edit'); }
+    }
   }
 
   async function saveDetail() {

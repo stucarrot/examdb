@@ -1013,3 +1013,81 @@ textarea { resize: vertical; }
   }
   #detailMobileViewSheetBody .tvControls { margin-bottom: 0; }
 }
+
+/* ==================== AI 자동 해설 / 마크다운·수식 렌더링 공통 (aiExplain.js, markdownRender.js) ==================== */
+
+/* 버튼 소형 변형 — 해설 영역처럼 좁은 공간에 버튼을 여러 개 붙일 때 사용 */
+.btnPrimary.small, .btnSecondary.small, .btnGhost.small, .btnDanger.small {
+  padding: 4px 10px; font-size: 12px; font-weight: 600;
+}
+
+/* 해설 편집 영역 공통 헤더: [편집/미리보기 탭] ... [AI 생성 버튼] */
+.explainFieldHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
+.choiceFieldLabelText { font-size: 11px; color: var(--muted); font-weight: 600; }
+.explainTabs { display: flex; gap: 4px; }
+.explainTabBtn {
+  border: 1px solid var(--border); background: #fff; color: var(--muted); border-radius: 6px;
+  padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.explainTabBtn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* 렌더링된 마크다운+수식 본문 공통 스타일 — 상세 미리보기/선지 미리보기/문제풀이 해설 팝업이 공유 */
+.markdownBody { font-size: 14px; line-height: 1.65; color: var(--text); overflow-wrap: anywhere; }
+.markdownBody :first-child { margin-top: 0; }
+.markdownBody :last-child { margin-bottom: 0; }
+.markdownBody p { margin: 0 0 10px; }
+.markdownBody ul, .markdownBody ol { margin: 0 0 10px; padding-left: 22px; }
+.markdownBody li { margin: 3px 0; }
+.markdownBody strong { color: var(--accent-dark); }
+.markdownBody code {
+  background: #eef0f8; border-radius: 4px; padding: 1px 5px; font-size: 12.5px;
+  font-family: 'Courier New', monospace;
+}
+.markdownBody pre { background: #1c2333; color: #eef0f8; border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.markdownBody pre code { background: none; padding: 0; color: inherit; }
+.markdownBody blockquote {
+  margin: 0 0 10px; padding: 4px 12px; border-left: 3px solid var(--accent); color: var(--muted); background: #f6f7fb;
+}
+.markdownBody hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.markdownBody table { border-collapse: collapse; margin: 0 0 12px; font-size: 13px; }
+.markdownBody th, .markdownBody td { border: 1px solid var(--border); padding: 5px 9px; }
+.markdownBody th { background: #f6f7fb; }
+/* KaTeX 블록 수식이 좁은 화면/사이드바를 넘칠 때 잘리지 않고 가로 스크롤되도록 */
+.markdownBody .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.markdownEmptyHint { color: var(--muted); font-style: italic; margin: 0; }
+
+/* 라이브러리 상세 — 해설 미리보기 패널(텍스트 영역과 자리를 바꿔가며 보임) */
+.detailExplanationPreview {
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: #fafbff; min-height: 120px;
+}
+
+/* 선지 보기(choices.js) — 선지별 해설 입력 영역 */
+.choiceExplainRow { display: flex; flex-direction: column; gap: 6px; }
+.choiceExplainInput {
+  width: 100%; resize: vertical; font-family: inherit; font-size: 13px; line-height: 1.5;
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; background: #fafbff;
+}
+.choiceExplainInput:focus { border-color: var(--accent); background: #fff; outline: none; }
+.choiceExplainPreview {
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: #fafbff; font-size: 13px; min-height: 44px;
+}
+.choiceExplainStatus { margin: 0; min-height: 0; }
+
+/* 일괄 생성 진행 모달(#aiExplainBatchModal) */
+.aiExplainProgressBar { height: 8px; border-radius: 5px; background: #eef0f8; overflow: hidden; }
+.aiExplainProgressFill { height: 100%; background: var(--accent); border-radius: 5px; transition: width .25s ease; }
+.aiExplainBatchLog {
+  max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; background: var(--bg); font-family: 'Courier New', monospace; font-size: 12px;
+}
+.aiExplainBatchLogLine { padding: 2px 0; white-space: pre-wrap; word-break: break-all; }
+.aiExplainBatchLogLine.ok { color: var(--ok); }
+.aiExplainBatchLogLine.skip { color: var(--muted); }
+.aiExplainBatchLogLine.err { color: var(--danger); }
+
+/* 문제풀이 모드 — "📖 해설" 큰 팝업(#solveExplainModal) */
+.solveExplainBox { max-width: 760px; }
+.solveExplainHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.solveExplainHead h2 { margin: 0; font-size: 17px; }
+.solveExplainBody { padding: 4px 2px; }
+.solveExplainGenWrap { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }

@@ -54,6 +54,8 @@ const ChoicesUI = (() => {
     el('#choiceBulkOxCancel').addEventListener('click', () => el('#choiceBulkOxModal').classList.add('hidden'));
     el('#choiceBulkOxApply').addEventListener('click', applyBulkOx);
 
+    el('#btnChoiceBulkAiExplain').addEventListener('click', onBulkAiExplain);
+
     el('#btnExportChoices').addEventListener('click', openExportModal);
     el('#choiceExportCancel').addEventListener('click', () => el('#choiceExportModal').classList.add('hidden'));
     el('#choiceExportRun').addEventListener('click', runExport);
@@ -231,7 +233,58 @@ const ChoicesUI = (() => {
       if (v !== c.memo) { c.memo = v; DB.updateChoice(c); }
     });
 
+    // ---- 해설(마크다운+수식 지원, AI 자동 생성 가능) ----
+    const explainRow = document.createElement('div');
+    explainRow.className = 'choiceExplainRow';
+    explainRow.innerHTML = `
+      <div class="explainFieldHead">
+        <span class="choiceFieldLabelText">해설</span>
+        <div class="spacer"></div>
+        <button type="button" class="btnGhost explainTabBtn choicePreviewToggle small active">✏️ 편집</button>
+        <button type="button" class="btnSecondary small choiceAiBtn">🤖 AI 해설 생성</button>
+      </div>
+      <textarea class="choiceExplainInput" rows="2" placeholder="이 선지에 대한 해설(마크다운/수식 지원)">${escapeHtml(c.explanation || '')}</textarea>
+      <div class="markdownBody choiceExplainPreview hidden"></div>
+      <p class="statusText choiceExplainStatus"></p>
+    `;
+    body.appendChild(explainRow);
+
+    const explainInput = explainRow.querySelector('.choiceExplainInput');
+    const explainPreview = explainRow.querySelector('.choiceExplainPreview');
+    const previewToggleBtn = explainRow.querySelector('.choicePreviewToggle');
+    explainInput.addEventListener('blur', () => {
+      const v = explainInput.value;
+      if (v !== (c.explanation || '')) { c.explanation = v; DB.updateChoice(c); }
+    });
+    previewToggleBtn.addEventListener('click', () => {
+      const nowPreview = explainInput.classList.contains('hidden'); // 지금 미리보기 상태였는가
+      explainInput.classList.toggle('hidden', !nowPreview);
+      explainPreview.classList.toggle('hidden', nowPreview);
+      previewToggleBtn.textContent = nowPreview ? '👁 미리보기' : '✏️ 편집';
+      if (!nowPreview) MarkdownRender.renderIntoOrPlaceholder(explainPreview, explainInput.value);
+    });
+    explainRow.querySelector('.choiceAiBtn').addEventListener('click', () => onChoiceAiExplain(c, explainInput, explainRow.querySelector('.choiceExplainStatus')));
+
     return row;
+  }
+
+  async function onChoiceAiExplain(choice, textareaEl, statusEl) {
+    const apiKey = await AIExplain.getApiKey();
+    if (!apiKey) { alert('먼저 "설정" 탭에서 Gemini API 키를 등록해주세요.'); return; }
+    if (textareaEl.value.trim() && !confirm('이미 작성된 해설이 있습니다. AI로 새로 생성해서 덮어쓸까요?')) return;
+    statusEl.textContent = '🤖 생성 중…';
+    try {
+      const q = choice.questionId ? await DB.getQuestion(choice.questionId) : null;
+      const blobs = q ? await DB.getImageBlobs(q) : [];
+      const text = await AIExplain.generateForChoice(choice, blobs);
+      textareaEl.value = text;
+      choice.explanation = text;
+      await DB.updateChoice(choice);
+      statusEl.textContent = '생성 완료 (자동 저장됨).';
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = '오류: ' + err.message;
+    }
   }
 
   async function setOx(choice, val, oxWrapEl) {
@@ -316,6 +369,38 @@ const ChoicesUI = (() => {
     }
     bulkOxTargets = [];
     el('#choiceBulkOxModal').classList.add('hidden');
+    await refresh();
+  }
+
+  // ---------------- AI 해설 일괄 생성 ----------------
+
+  async function onBulkAiExplain() {
+    const list = getSelectedOrConfirmAll('AI 해설 생성');
+    if (!list.length) return;
+    const apiKey = await AIExplain.getApiKey();
+    if (!apiKey) { alert('먼저 "설정" 탭에서 Gemini API 키를 등록해주세요.'); return; }
+    const qImageCache = new Map(); // questionId -> Blob[] (같은 문제에 속한 선지 여러 개를 돌릴 때 중복 조회 방지)
+    await AIExplain.openBatchModal({
+      title: 'AI 해설 일괄 생성 (선지)',
+      hint: `${list.length}개 중 해설이 비어있는 선지만 생성합니다.`,
+      items: list,
+      skip: (c) => !!(c.explanation && c.explanation.trim()),
+      itemLabel: (c) => c.code || PDFAnalyze.markerToPlain(c.marker) || '',
+      task: async (c) => {
+        let blobs = qImageCache.get(c.questionId);
+        if (!blobs) {
+          const q = c.questionId ? await DB.getQuestion(c.questionId) : null;
+          blobs = q ? await DB.getImageBlobs(q) : [];
+          qImageCache.set(c.questionId, blobs);
+        }
+        const text = await AIExplain.generateForChoice(c, blobs);
+        const fresh = await DB.getChoice(c.id);
+        if (!fresh) return;
+        fresh.explanation = text;
+        await DB.updateChoice(fresh);
+        c.explanation = text;
+      },
+    });
     await refresh();
   }
 

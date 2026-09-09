@@ -80,6 +80,11 @@ async function base64ToBlob(dataUrl) {
   return res.blob();
 }
 
+// 백업 JSON에는 절대 포함하면 안 되는 meta 키(비밀키류). 백업 파일을 스터디원과
+// 공유하거나 깃허브 등에 올렸다가 API 키가 같이 새어나가는 사고를 막기 위함 —
+// "API 키는 이 브라우저에만 저장" 원칙(aiExplain.js 참고)을 백업/복원에도 지킨다.
+const SENSITIVE_META_KEYS = ['geminiApiKey'];
+
 /** 시험/문제 명명 알고리즘 — 다른 모듈(importUI 등)에서도 재사용 */
 const Naming = {
   /** 문제지(exam) 코드: 시험유형_연도_과목_책형 (값이 없는 항목은 생략) */
@@ -410,7 +415,9 @@ const DB = {
     const exams = await this.getAllExams();
     const questions = await this.getAllQuestions();
     const choices = await this.getAllChoices();
-    const meta = await this.getAllMeta();
+    const metaAll = await this.getAllMeta(); // { key: value } 형태
+    const meta = {};
+    Object.keys(metaAll).forEach((key) => { if (!SENSITIVE_META_KEYS.includes(key)) meta[key] = metaAll[key]; });
     const out = [];
     let i = 0;
     for (const q of questions) {
@@ -462,8 +469,12 @@ const DB = {
     // meta(가져오기 자동완성 기억 등 내부 설정)도 함께 있으면 복원한다.
     // merge=false로 전체 교체한 경우엔 clearAll()이 exams/questions/images만
     // 비웠으므로, 여기서도 같은 merge 플래그로 meta를 통일성 있게 처리한다.
+    // API 키 등 민감한 값(SENSITIVE_META_KEYS)은 혹시 옛 백업 파일에 섞여 있어도
+    // 복원하지 않는다 — 다른 사람이 준 백업으로 내 브라우저의 키가 덮어써지는 걸 방지.
     if (data && data.meta) {
-      await this.setAllMeta(data.meta, { merge });
+      const safeMeta = {};
+      Object.keys(data.meta).forEach((key) => { if (!SENSITIVE_META_KEYS.includes(key)) safeMeta[key] = data.meta[key]; });
+      await this.setAllMeta(safeMeta, { merge });
     }
 
     return list.length;

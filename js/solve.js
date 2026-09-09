@@ -77,6 +77,9 @@ const SolveUI = (() => {
     el('#solvePrevBtn').addEventListener('click', () => goTo(session.index - 1));
     el('#solveNextBtn').addEventListener('click', () => goTo(session.index + 1));
     el('#solveRevealBtn').addEventListener('click', onRevealClick);
+    el('#solveExplainBtn').addEventListener('click', openExplainModal);
+    el('#solveExplainCloseBtn').addEventListener('click', () => el('#solveExplainModal').classList.add('hidden'));
+    el('#solveExplainGenBtn').addEventListener('click', onSolveExplainGenerate);
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
     el('#solveTextToggle').addEventListener('click', onTextToggleClick);
     el('#solveTimer').addEventListener('click', onTimerToggleClick);
@@ -427,7 +430,62 @@ const SolveUI = (() => {
     renderAnswerPanel();
     updateBottomBar();
     updateDrawerHighlight();
+    updateExplainBtnState();
     el('#solveGradeBtn').textContent = session.submitted ? '결과' : '채점';
+  }
+
+  /** "📖 해설" 버튼은 이 문제의 정답을 확인(정답보기 또는 채점)하기 전까지는 비활성 —
+   * 풀기 전에 미리 봐버리는 걸 막기 위함. */
+  function updateExplainBtnState() {
+    const q = questions[session.index];
+    const btn = el('#solveExplainBtn');
+    if (!q || !btn) return;
+    const unlocked = session.submitted || !!session.revealed[q.id];
+    btn.disabled = !unlocked;
+    btn.title = unlocked ? '해설 보기' : '정답을 확인하면 이용할 수 있습니다';
+  }
+
+  /** 해설 팝업 열기. 해설이 비어있으면 안내 문구 + "AI 해설 생성" 버튼을 보여준다. */
+  function openExplainModal() {
+    const q = questions[session.index];
+    if (!q) return;
+    const unlocked = session.submitted || !!session.revealed[q.id];
+    if (!unlocked) return;
+    el('#solveExplainGenStatus').textContent = '';
+    const body = el('#solveExplainBody');
+    const genWrap = el('#solveExplainGenWrap');
+    if (q.explanation && q.explanation.trim()) {
+      MarkdownRender.renderInto(body, q.explanation);
+      genWrap.classList.add('hidden');
+    } else {
+      MarkdownRender.renderIntoOrPlaceholder(body, '');
+      genWrap.classList.remove('hidden');
+    }
+    el('#solveExplainModal').classList.remove('hidden');
+  }
+
+  async function onSolveExplainGenerate() {
+    const q = questions[session.index];
+    if (!q) return;
+    const apiKey = await AIExplain.getApiKey();
+    if (!apiKey) { alert('먼저 "설정" 탭에서 Gemini API 키를 등록해주세요.'); return; }
+    const btn = el('#solveExplainGenBtn');
+    const status = el('#solveExplainGenStatus');
+    btn.disabled = true;
+    status.textContent = '🤖 이미지를 분석해서 해설을 생성하는 중…';
+    try {
+      const blobs = await DB.getImageBlobs(q);
+      const text = await AIExplain.generateForQuestion(q, blobs);
+      q.explanation = text; // questions[] 배열의 실제 객체라 여기서 바로 바꿔도 반영됨
+      await DB.updateQuestion(q);
+      MarkdownRender.renderInto(el('#solveExplainBody'), text);
+      el('#solveExplainGenWrap').classList.add('hidden');
+    } catch (err) {
+      console.error(err);
+      status.textContent = '오류: ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   /** 이미지 대신 설문(발문)+선지를 텍스트로 보여준다. 답 선택 자체는 기존 #solveChoiceRow
@@ -537,7 +595,9 @@ const SolveUI = (() => {
     let line;
     if (!chosen) line = `<span class="solveAnswerLine">정답: ${answerLabel}</span>`;
     else line = `<span class="solveAnswerLine ${correct ? 'ans-correct' : 'ans-wrong'}">${correct ? '정답입니다! ' : '오답입니다. '}정답: ${answerLabel}</span>`;
-    panel.innerHTML = line + (q.explanation ? `<div class="solveAnswerExplain">${escapeHtml(q.explanation).replace(/\n/g, '<br>')}</div>` : '');
+    // 해설 본문은 여기 짧게 욱여넣지 않고 "📖 해설" 버튼(하단 바)으로 큰 팝업에서 보여준다
+    // (마크다운/수식이 있을 수 있어 이 좁은 패널에 그대로 넣으면 제대로 안 보인다).
+    panel.innerHTML = line;
   }
 
   function updateBottomBar() {

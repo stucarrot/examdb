@@ -13,8 +13,11 @@ const SettingsUI = (() => {
     el('#btnMemoryBackup').addEventListener('click', onMemoryBackup);
     el('#memoryRestoreFile').addEventListener('change', onMemoryRestoreFileChosen);
     el('#btnMemoryReset').addEventListener('click', onMemoryReset);
+    el('#aiSettingsSaveBtn').addEventListener('click', onAiSettingsSave);
+    el('#aiSettingsTestBtn').addEventListener('click', onAiSettingsTest);
     refreshStats();
     refreshMemoryList();
+    refreshAiSettings();
   }
 
   async function refreshStats() {
@@ -164,6 +167,44 @@ const SettingsUI = (() => {
     await ImportMemory.resetAll();
     await refreshMemoryList();
     el('#memoryStatus').textContent = '기억을 초기화했습니다.';
+  }
+
+  // ==================== AI 자동 해설(Gemini) 설정 ====================
+  // 키/모델/그라운딩 여부는 DB.setMeta로 이 브라우저에만 저장(AIExplain 모듈이 실제 사용).
+  // 백업(exportAll)은 meta 스토어 중 API 키(geminiApiKey)만 걸러내고 내보내므로, 백업
+  // 파일을 스터디원과 공유해도 키가 함께 새어나가지 않는다 — db.js SENSITIVE_META_KEYS 참고.
+
+  async function refreshAiSettings() {
+    if (!window.AIExplain) return;
+    el('#aiApiKeyInput').value = await AIExplain.getApiKey();
+    const model = await AIExplain.getModel();
+    el('#aiModelInput').value = model === AIExplain.DEFAULT_MODEL ? '' : model;
+    el('#aiModelInput').placeholder = AIExplain.DEFAULT_MODEL;
+    el('#aiGroundingChk').checked = await AIExplain.getUseGrounding();
+  }
+
+  async function onAiSettingsSave() {
+    await AIExplain.setApiKey(el('#aiApiKeyInput').value);
+    await AIExplain.setModel(el('#aiModelInput').value);
+    await AIExplain.setUseGrounding(el('#aiGroundingChk').checked);
+    el('#aiSettingsStatus').textContent = '저장했습니다.';
+    setTimeout(() => { if (el('#aiSettingsStatus').textContent === '저장했습니다.') el('#aiSettingsStatus').textContent = ''; }, 2000);
+  }
+
+  async function onAiSettingsTest() {
+    await onAiSettingsSave();
+    const btn = el('#aiSettingsTestBtn');
+    const status = el('#aiSettingsStatus');
+    btn.disabled = true;
+    status.textContent = '연결 확인 중…';
+    try {
+      await AIExplain.testConnection();
+      status.textContent = '✓ 연결 성공';
+    } catch (err) {
+      status.textContent = '✕ ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   return { init, refreshStats, refreshMemoryList };
