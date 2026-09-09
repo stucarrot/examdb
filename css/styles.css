@@ -1091,3 +1091,12 @@ textarea { resize: vertical; }
 .solveExplainHead h2 { margin: 0; font-size: 17px; }
 .solveExplainBody { padding: 4px 2px; }
 .solveExplainGenWrap { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
+
+/* 설정 탭 — 여러 줄 API 키 입력란. 초점이 없을 때는 흐리게 가려서 어깨너머로 보이거나
+   화면 공유 중 실수로 노출되는 걸 줄이고, 클릭(포커스)하면 또렷하게 보인다(순수 CSS
+   트릭이라 완전한 보안은 아니고 어디까지나 시야 가림 정도의 배려). */
+.aiApiKeyInput {
+  font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;
+  filter: blur(4px); transition: filter .12s ease;
+}
+.aiApiKeyInput:focus { filter: none; }

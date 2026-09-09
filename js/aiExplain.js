@@ -9,6 +9,12 @@
  * 동작하므로 브라우저 개발자도구에서는 키가 그대로 보인다는 점은 감안해야 한다(개인용
  * 로컬 사용 전제 — 여러 사람이 같이 쓰는 배포라면 키를 공유 계정에 두지 말 것).
  *
+ * 여러 개의 API 키를 줄바꿈으로 입력해두면, 지금 쓰는 키가 한도 초과(429/할당량 소진)로
+ * 실패할 때 자동으로 다음 키로 넘어가서 이어서 시도한다(withKeyRotation 참고) — 무료
+ * 티어 키 여러 개를 돌려쓰는 걸 염두에 둔 기능. 성공한 키는 다음 호출의 시작점으로
+ * 기억해둬서(geminiApiKeyIndex), 이미 소진된 앞쪽 키부터 매번 다시 시도하며 시간을
+ * 낭비하지 않는다.
+ *
  * 응답 형식: JSON 스키마(responseSchema) 모드는 구글 검색 그라운딩(tools:googleSearch)과
  * 같은 요청에 함께 쓸 수 없다(둘 다 켜면 400 에러). 이 앱은 "법령/판례 등은 최신 정보를
  * 검색해서 반영하고, 근거 없는 내용은 지어내지 말 것"이 우선순위가 높다고 보고 JSON 모드
@@ -17,7 +23,9 @@
  */
 
 const AIExplain = (() => {
-  const API_KEY_META = 'geminiApiKey';
+  const LEGACY_API_KEY_META = 'geminiApiKey'; // 구버전(키 1개)용 — 마이그레이션 전용, 새로 쓰지 않음
+  const API_KEYS_TEXT_META = 'geminiApiKeysText'; // 줄바꿈으로 구분된 여러 키의 원문(설정 탭 textarea 그대로)
+  const KEY_INDEX_META = 'geminiApiKeyIndex'; // 다음 호출을 시작할 키의 인덱스(마지막으로 성공한 키를 기억)
   const MODEL_META = 'geminiModel';
   const GROUNDING_META = 'geminiUseGrounding';
   // 'gemini-flash-latest'는 구글이 계속 최신 flash 모델로 갱신해주는 별칭이라, 특정
@@ -27,8 +35,30 @@ const AIExplain = (() => {
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-  async function getApiKey() { return (await DB.getMeta(API_KEY_META)) || ''; }
-  async function setApiKey(key) { await DB.setMeta(API_KEY_META, String(key || '').trim()); }
+  function parseApiKeys(text) {
+    return String(text || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+
+  /** 설정 탭 textarea에 그대로 채워 넣을 원문 텍스트. 예전 버전(키 1개, geminiApiKey)만
+   * 저장돼 있던 경우 한 번만 새 저장 방식으로 옮겨준다. */
+  async function getApiKeysText() {
+    let text = await DB.getMeta(API_KEYS_TEXT_META);
+    if (text === null || text === undefined) {
+      const legacy = await DB.getMeta(LEGACY_API_KEY_META);
+      text = legacy || '';
+      if (legacy) await DB.setMeta(API_KEYS_TEXT_META, text);
+    }
+    return text;
+  }
+  async function setApiKeysText(text) { await DB.setMeta(API_KEYS_TEXT_META, String(text || '')); }
+  async function getApiKeys() { return parseApiKeys(await getApiKeysText()); }
+
+  /** 이전 버전과의 호환/"키가 하나라도 설정돼 있는지" 확인용. 실제 API 호출은
+   * withKeyRotation()이 내부적으로 여러 키를 자동으로 돌려가며 쓰므로, 다른 모듈은 이
+   * 값을 호출에 직접 쓰지 말고 "설정 여부"를 확인하는 용도로만 써야 한다. */
+  async function getApiKey() { const keys = await getApiKeys(); return keys[0] || ''; }
+  async function setApiKey(key) { await setApiKeysText(key); }
+
   async function getModel() { return (await DB.getMeta(MODEL_META)) || DEFAULT_MODEL; }
   async function setModel(model) { await DB.setMeta(MODEL_META, String(model || '').trim() || DEFAULT_MODEL); }
   /** 기본 on — 법령/판례/시사성 있는 내용을 최신 상태로 반영하고 환각을 줄이는 데 중요하다. */
@@ -89,12 +119,18 @@ const AIExplain = (() => {
     if (res.status === 429) {
       const err = new Error('요청이 몰려 잠시 대기 후 재시도합니다(429).');
       err.rateLimited = true;
+      err.quotaExhausted = true; // 여러 키를 등록해뒀다면 withKeyRotation()이 다음 키로 넘어간다
       throw err;
     }
     if (!res.ok) {
       let detail = '';
-      try { detail = (await res.json()).error?.message || ''; } catch (e) { /* 무시 */ }
-      throw new Error(`Gemini API 오류 (${res.status})${detail ? ': ' + detail : ''}`);
+      let status = '';
+      try { const j = await res.json(); detail = j.error?.message || ''; status = j.error?.status || ''; } catch (e) { /* 무시 */ }
+      const err = new Error(`Gemini API 오류 (${res.status})${detail ? ': ' + detail : ''}`);
+      // RESOURCE_EXHAUSTED는 보통 429로 오지만, 드물게 다른 상태코드에 이 reason이
+      // 실려오는 경우도 있어 문자열로도 한 번 더 확인해서 로테이션 대상에 포함시킨다.
+      if (status === 'RESOURCE_EXHAUSTED' || /quota/i.test(detail)) err.quotaExhausted = true;
+      throw err;
     }
     const data = await res.json();
     const cand = data.candidates && data.candidates[0];
@@ -118,25 +154,62 @@ const AIExplain = (() => {
     return text;
   }
 
-  /** 429(rate limit)만 짧은 대기 후 재시도, 그 외 오류는 바로 위로 던진다. */
-  async function withRetry(fn, retries = 3) {
+  /** 429(rate limit)만 짧은 대기 후 재시도, 그 외 오류는 바로 위로 던진다. 키 로테이션이
+   * 어차피 다음 키로 넘어가 주므로, 여기서는 "진짜 순간적인 튐"만 한 번 커버할 정도로
+   * 짧게(재시도 1회) 잡아둔다 — 이미 소진된 키를 붙잡고 오래 기다리지 않기 위해서. */
+  async function withRetry(fn, retries = 1) {
     let lastErr;
     for (let i = 0; i <= retries; i++) {
       try { return await fn(); } catch (e) {
         lastErr = e;
-        if (e.rateLimited && i < retries) { await sleep(1500 * (i + 1)); continue; }
+        if (e.rateLimited && i < retries) { await sleep(1200); continue; }
         throw e;
       }
     }
     throw lastErr;
   }
 
+  async function getKeyIndex() {
+    const v = await DB.getMeta(KEY_INDEX_META);
+    return Number.isInteger(v) ? v : 0;
+  }
+  async function setKeyIndex(i) { await DB.setMeta(KEY_INDEX_META, i); }
+
+  function isQuotaError(e) { return !!(e && e.quotaExhausted); }
+
+  /**
+   * 등록된 여러 키를 자동으로 돌려가며 makeCall(apiKey)를 시도한다. 지금 가리키는
+   * 키(geminiApiKeyIndex)부터 시작해서, 한도 초과로 보이는 실패(isQuotaError)면 다음
+   * 키로 넘어가고, 그 외 오류(잘못된 요청, 콘텐츠 차단 등 — 키를 바꿔도 소용없는 문제)면
+   * 바로 실패 처리한다. 성공하면 그 키의 인덱스를 다음 시작점으로 저장해서, 이미 소진된
+   * 앞쪽 키부터 매번 다시 시도하며 시간을 낭비하지 않게 한다.
+   */
+  async function withKeyRotation(makeCall) {
+    const keys = await getApiKeys();
+    if (!keys.length) throw new Error('Gemini API 키가 설정돼 있지 않습니다. 설정 탭에서 등록해주세요(한 줄에 하나씩 여러 개 입력 가능).');
+    let startIdx = await getKeyIndex();
+    if (!Number.isInteger(startIdx) || startIdx < 0 || startIdx >= keys.length) startIdx = 0;
+
+    let lastErr;
+    for (let attempt = 0; attempt < keys.length; attempt++) {
+      const useIdx = (startIdx + attempt) % keys.length;
+      try {
+        const result = await withRetry(() => makeCall(keys[useIdx]));
+        if (useIdx !== startIdx) await setKeyIndex(useIdx); // 다음 호출은 방금 성공한 키부터
+        return result;
+      } catch (e) {
+        lastErr = e;
+        if (!isQuotaError(e)) throw e; // 키를 바꿔도 소용없는 오류는 바로 던짐(다른 키로 재시도 X)
+        // 한도 초과로 보이면 다음 키로 넘어가서 계속 시도
+      }
+    }
+    throw new Error(`등록된 API 키 ${keys.length}개를 모두 시도했지만 전부 한도를 초과했습니다. 잠시 후 다시 시도하거나 새 키를 추가해주세요. (마지막 오류: ${lastErr.message})`);
+  }
+
   async function commonConfig() {
-    const apiKey = await getApiKey();
-    if (!apiKey) throw new Error('Gemini API 키가 설정돼 있지 않습니다. 설정 탭에서 등록해주세요.');
     const model = await getModel();
     const useGrounding = await getUseGrounding();
-    return { apiKey, model, useGrounding };
+    return { model, useGrounding };
   }
 
   /**
@@ -146,7 +219,7 @@ const AIExplain = (() => {
    * @param {Blob[]} imageBlobs DB.getImageBlobs(question) 결과
    */
   async function generateForQuestion(question, imageBlobs) {
-    const { apiKey, model, useGrounding } = await commonConfig();
+    const { model, useGrounding } = await commonConfig();
     const imageParts = await blobsToInlineParts(imageBlobs);
     const contextLines = [
       [question.examTitle, question.subject, question.round].filter(Boolean).join(' '),
@@ -163,7 +236,7 @@ ${COMMON_RULES}
 [문제 정보]
 ${contextLines}`;
 
-    return withRetry(() => callGemini({ apiKey, model, useGrounding, parts: [{ text: promptText }, ...imageParts] }));
+    return withKeyRotation((apiKey) => callGemini({ apiKey, model, useGrounding, parts: [{ text: promptText }, ...imageParts] }));
   }
 
   /**
@@ -172,7 +245,7 @@ ${contextLines}`;
    * @param {Blob[]} [questionImageBlobs] 선택. 소속 문제의 원본 이미지(참고용, 함께 전송)
    */
   async function generateForChoice(choice, questionImageBlobs) {
-    const { apiKey, model, useGrounding } = await commonConfig();
+    const { model, useGrounding } = await commonConfig();
     const imageParts = await blobsToInlineParts(questionImageBlobs);
     const marker = (window.PDFAnalyze && PDFAnalyze.markerToPlain) ? PDFAnalyze.markerToPlain(choice.marker) : (choice.marker || '');
     const oxLine = choice.ox
@@ -189,15 +262,13 @@ ${COMMON_RULES}
 ${oxLine}
 ${imageParts.length ? '(첨부한 이미지는 이 선지가 속한 원본 문제입니다 — 필요할 때만 참고하세요.)' : ''}`;
 
-    return withRetry(() => callGemini({ apiKey, model, useGrounding, parts: [{ text: promptText }, ...imageParts] }));
+    return withKeyRotation((apiKey) => callGemini({ apiKey, model, useGrounding, parts: [{ text: promptText }, ...imageParts] }));
   }
 
-  /** API 키가 실제로 유효한지 가볍게 확인(설정 탭 "연결 테스트"용). 그라운딩/이미지 없이
-   * 최소 토큰으로만 호출해서 빠르고 저렴하게 검증한다. */
-  async function testConnection() {
-    const apiKey = await getApiKey();
-    if (!apiKey) throw new Error('API 키를 먼저 입력해주세요.');
-    const model = await getModel();
+  /** 등록된 키 각각이 실제로 유효한지 가볍게 확인(설정 탭 "연결 테스트"용). 그라운딩/
+   * 이미지 없이 최소 토큰으로만 호출해서 빠르고 저렴하게 검증한다. 여러 키를 등록했다면
+   * 하나만 확인하지 않고 전부 확인해서 몇 개가 살아있는지 알려준다. */
+  async function pingOnce(apiKey, model) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const res = await fetch(url, {
       method: 'POST',
@@ -207,9 +278,21 @@ ${imageParts.length ? '(첨부한 이미지는 이 선지가 속한 원본 문�
     if (!res.ok) {
       let detail = '';
       try { detail = (await res.json()).error?.message || ''; } catch (e) { /* 무시 */ }
-      throw new Error(`연결 실패 (${res.status})${detail ? ': ' + detail : ''}`);
+      throw new Error(`(${res.status})${detail ? ': ' + detail : ''}`);
     }
-    return true;
+  }
+
+  async function testConnection() {
+    const keys = await getApiKeys();
+    if (!keys.length) throw new Error('API 키를 먼저 입력해주세요(한 줄에 하나씩 여러 개 가능).');
+    const model = await getModel();
+    const failures = [];
+    let ok = 0;
+    for (let i = 0; i < keys.length; i++) {
+      try { await pingOnce(keys[i], model); ok++; } catch (e) { failures.push({ index: i, message: e.message }); }
+    }
+    if (ok === 0) throw new Error(`${keys.length}개 키 모두 연결 실패 (첫 번째 오류: ${failures[0].message})`);
+    return { ok, total: keys.length, failures };
   }
 
   // ==================== 일괄 실행(진행 모달) ====================
@@ -302,7 +385,8 @@ ${imageParts.length ? '(첨부한 이미지는 이 선지가 속한 원본 문�
 
   return {
     DEFAULT_MODEL,
-    getApiKey, setApiKey, getModel, setModel, getUseGrounding, setUseGrounding,
+    getApiKey, setApiKey, getApiKeysText, setApiKeysText, getApiKeys,
+    getModel, setModel, getUseGrounding, setUseGrounding,
     generateForQuestion, generateForChoice, testConnection,
     runBatch, openBatchModal,
   };

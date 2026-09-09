@@ -332,8 +332,11 @@
         자동으로 옮겨지지 않으니, 새 기기에서도 쓰려면 그 기기에서 다시 입력해야 합니다. 이 앱은 서버가
         없어서 키를 브라우저가 구글 API로 직접 전송하는 구조이니, 공용 컴퓨터에서는 등록해두지 마세요.</p>
       <label>Gemini API 키
-        <input type="password" id="aiApiKeyInput" placeholder="AIza...">
+        <textarea id="aiApiKeyInput" rows="3" class="aiApiKeyInput" placeholder="AIza... (한 줄에 하나씩, 여러 개 입력 가능)"></textarea>
       </label>
+      <p class="hint" style="margin:2px 0 10px;">한 줄에 하나씩 여러 개 입력할 수 있습니다 — 무료 티어 키를
+        여러 개 등록해두면, 지금 쓰는 키가 한도를 초과했을 때(429) 자동으로 다음 줄의 키로 넘어가서 이어서
+        생성합니다. 입력란은 초점이 없을 때는 흐리게 가려지고, 클릭하면 또렷하게 보입니다.</p>
       <label>모델
         <input type="text" id="aiModelInput" placeholder="gemini-flash-latest">
       </label>
@@ -343,7 +346,7 @@
         구글 검색으로 근거를 찾아 반영(권장) — 법령·판례·통계처럼 최신성이 중요한 내용의 환각을 줄여줍니다.</label>
       <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <button id="aiSettingsSaveBtn" class="btnPrimary">저장</button>
-        <button id="aiSettingsTestBtn" class="btnSecondary">연결 테스트</button>
+        <button id="aiSettingsTestBtn" class="btnSecondary">연결 테스트 (키별로 확인)</button>
         <span id="aiSettingsStatus" class="statusText"></span>
       </div>
     </div>

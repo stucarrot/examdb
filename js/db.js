@@ -83,7 +83,9 @@ async function base64ToBlob(dataUrl) {
 // 백업 JSON에는 절대 포함하면 안 되는 meta 키(비밀키류). 백업 파일을 스터디원과
 // 공유하거나 깃허브 등에 올렸다가 API 키가 같이 새어나가는 사고를 막기 위함 —
 // "API 키는 이 브라우저에만 저장" 원칙(aiExplain.js 참고)을 백업/복원에도 지킨다.
-const SENSITIVE_META_KEYS = ['geminiApiKey'];
+// geminiApiKey: 구버전(키 1개) 저장 방식, geminiApiKeysText: 줄바꿈으로 여러 개
+// 저장하는 현재 방식 — 마이그레이션 과정에서 둘 다 남아있을 수 있어 둘 다 걸러낸다.
+const SENSITIVE_META_KEYS = ['geminiApiKey', 'geminiApiKeysText'];
 
 /** 시험/문제 명명 알고리즘 — 다른 모듈(importUI 등)에서도 재사용 */
 const Naming = {

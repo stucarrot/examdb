@@ -176,7 +176,7 @@ const SettingsUI = (() => {
 
   async function refreshAiSettings() {
     if (!window.AIExplain) return;
-    el('#aiApiKeyInput').value = await AIExplain.getApiKey();
+    el('#aiApiKeyInput').value = await AIExplain.getApiKeysText();
     const model = await AIExplain.getModel();
     el('#aiModelInput').value = model === AIExplain.DEFAULT_MODEL ? '' : model;
     el('#aiModelInput').placeholder = AIExplain.DEFAULT_MODEL;
@@ -184,11 +184,12 @@ const SettingsUI = (() => {
   }
 
   async function onAiSettingsSave() {
-    await AIExplain.setApiKey(el('#aiApiKeyInput').value);
+    await AIExplain.setApiKeysText(el('#aiApiKeyInput').value);
     await AIExplain.setModel(el('#aiModelInput').value);
     await AIExplain.setUseGrounding(el('#aiGroundingChk').checked);
-    el('#aiSettingsStatus').textContent = '저장했습니다.';
-    setTimeout(() => { if (el('#aiSettingsStatus').textContent === '저장했습니다.') el('#aiSettingsStatus').textContent = ''; }, 2000);
+    const n = (await AIExplain.getApiKeys()).length;
+    el('#aiSettingsStatus').textContent = n ? `저장했습니다. (키 ${n}개 등록됨)` : '저장했습니다. (등록된 키 없음)';
+    setTimeout(() => { if (el('#aiSettingsStatus').textContent.startsWith('저장했습니다')) el('#aiSettingsStatus').textContent = ''; }, 2500);
   }
 
   async function onAiSettingsTest() {
@@ -196,10 +197,10 @@ const SettingsUI = (() => {
     const btn = el('#aiSettingsTestBtn');
     const status = el('#aiSettingsStatus');
     btn.disabled = true;
-    status.textContent = '연결 확인 중…';
+    status.textContent = '연결 확인 중… (키가 여러 개면 하나씩 순서대로 확인합니다)';
     try {
-      await AIExplain.testConnection();
-      status.textContent = '✓ 연결 성공';
+      const { ok, total } = await AIExplain.testConnection();
+      status.textContent = ok === total ? `✓ 등록된 키 ${total}개 모두 정상` : `⚠ ${total}개 중 ${ok}개만 정상 (나머지는 한도 초과 또는 잘못된 키일 수 있음)`;
     } catch (err) {
       status.textContent = '✕ ' + err.message;
     } finally {
