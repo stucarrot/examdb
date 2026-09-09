@@ -1047,10 +1047,12 @@ const LibraryUI = (() => {
     const btn = el('#detailExplainAiBtn');
     const status = el('#detailExplainAiStatus');
     btn.disabled = true;
-    status.textContent = '🤖 이미지를 분석해서 해설을 생성하는 중… (검색 근거를 함께 확인하면 조금 더 걸릴 수 있어요)';
+    status.textContent = '🤖 해설을 생성하는 중… (검색 근거를 함께 확인하면 조금 더 걸릴 수 있어요)';
     try {
       const q = await DB.getQuestion(currentDetailId);
-      const blobs = await DB.getImageBlobs(q);
+      // 텍스트로 인식된 문제(q.hasTextChoices)는 AIExplain이 이미지 대신 텍스트를 쓰므로
+      // 여기서 굳이 이미지를 안 읽어와도 된다.
+      const blobs = q.hasTextChoices ? [] : await DB.getImageBlobs(q);
       const text = await AIExplain.generateForQuestion(q, blobs);
       textarea.value = text;
       status.textContent = '생성 완료 — "저장"을 눌러야 반영됩니다.';
@@ -1079,7 +1081,8 @@ const LibraryUI = (() => {
       task: async (q) => {
         const fresh = await DB.getQuestion(q.id);
         if (!fresh) return;
-        const blobs = await DB.getImageBlobs(fresh);
+        // 텍스트로 인식된 문제는 AIExplain이 이미지 대신 텍스트를 쓰므로 굳이 안 읽어온다.
+        const blobs = fresh.hasTextChoices ? [] : await DB.getImageBlobs(fresh);
         const text = await AIExplain.generateForQuestion(fresh, blobs);
         fresh.explanation = text;
         await DB.updateQuestion(fresh);

@@ -472,9 +472,11 @@ const SolveUI = (() => {
     const btn = el('#solveExplainGenBtn');
     const status = el('#solveExplainGenStatus');
     btn.disabled = true;
-    status.textContent = '🤖 이미지를 분석해서 해설을 생성하는 중…';
+    status.textContent = '🤖 해설을 생성하는 중…';
     try {
-      const blobs = await DB.getImageBlobs(q);
+      // 텍스트로 인식된 문제(q.hasTextChoices)는 AIExplain이 이미지 대신 텍스트를 쓰므로
+      // 여기서 굳이 이미지를 안 읽어와도 된다.
+      const blobs = q.hasTextChoices ? [] : await DB.getImageBlobs(q);
       const text = await AIExplain.generateForQuestion(q, blobs);
       q.explanation = text; // questions[] 배열의 실제 객체라 여기서 바로 바꿔도 반영됨
       await DB.updateQuestion(q);

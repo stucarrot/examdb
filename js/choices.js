@@ -275,8 +275,9 @@ const ChoicesUI = (() => {
     statusEl.textContent = '🤖 생성 중…';
     try {
       const q = choice.questionId ? await DB.getQuestion(choice.questionId) : null;
-      const blobs = q ? await DB.getImageBlobs(q) : [];
-      const text = await AIExplain.generateForChoice(choice, blobs);
+      // 문제가 텍스트로 인식돼 있으면(q.hasTextChoices) AIExplain이 알아서 이미지 대신
+      // 텍스트(발문)를 근거로 쓴다 — 이미지 조회는 그게 아닐 때만 내부에서 이뤄진다.
+      const text = await AIExplain.generateForChoice(choice, q);
       textareaEl.value = text;
       choice.explanation = text;
       await DB.updateChoice(choice);
@@ -379,7 +380,7 @@ const ChoicesUI = (() => {
     if (!list.length) return;
     const apiKey = await AIExplain.getApiKey();
     if (!apiKey) { alert('먼저 "설정" 탭에서 Gemini API 키를 등록해주세요.'); return; }
-    const qImageCache = new Map(); // questionId -> Blob[] (같은 문제에 속한 선지 여러 개를 돌릴 때 중복 조회 방지)
+    const qCache = new Map(); // questionId -> question 레코드 (같은 문제에 속한 선지 여러 개를 돌릴 때 중복 조회 방지)
     await AIExplain.openBatchModal({
       title: 'AI 해설 일괄 생성 (선지)',
       hint: `${list.length}개 중 해설이 비어있는 선지만 생성합니다.`,
@@ -387,13 +388,14 @@ const ChoicesUI = (() => {
       skip: (c) => !!(c.explanation && c.explanation.trim()),
       itemLabel: (c) => c.code || PDFAnalyze.markerToPlain(c.marker) || '',
       task: async (c) => {
-        let blobs = qImageCache.get(c.questionId);
-        if (!blobs) {
-          const q = c.questionId ? await DB.getQuestion(c.questionId) : null;
-          blobs = q ? await DB.getImageBlobs(q) : [];
-          qImageCache.set(c.questionId, blobs);
+        let q = qCache.get(c.questionId);
+        if (q === undefined) {
+          q = c.questionId ? await DB.getQuestion(c.questionId) : null;
+          qCache.set(c.questionId, q);
         }
-        const text = await AIExplain.generateForChoice(c, blobs);
+        // 문제가 텍스트로 인식돼 있으면(q.hasTextChoices) AIExplain이 알아서 이미지 대신
+        // 텍스트(발문)를 근거로 쓴다 — 이미지 조회는 그게 아닐 때만 내부에서 이뤄진다.
+        const text = await AIExplain.generateForChoice(c, q);
         const fresh = await DB.getChoice(c.id);
         if (!fresh) return;
         fresh.explanation = text;

@@ -88,6 +88,20 @@ const AIExplain = (() => {
     return parts;
   }
 
+  // 무료 티어 키는 보통 "분당 요청수(RPM)"가 꽤 빡빡하다(예: 분당 10~15회 수준). 일괄
+  // 생성처럼 요청을 쉬지 않고 연달아 쏘면 키 자체는 멀쩡해도 이 RPM에 걸려 429가 계속
+  // 뜰 수 있어서, 같은 키로는 최소 이 간격만큼 띄엄띄엄 호출하도록 클라이언트 쪽에서
+  // 미리 속도를 늦춘다(throttle) — 서버가 실제로 막기 전에 애초에 덜 자주 두드리는 것.
+  const MIN_INTERVAL_MS = 4200;
+  const lastCallAtByKey = new Map(); // apiKey -> 그 키로 마지막 요청을 "시작"한 시각
+
+  async function throttle(apiKey) {
+    const last = lastCallAtByKey.get(apiKey) || 0;
+    const waitMs = last + MIN_INTERVAL_MS - Date.now();
+    lastCallAtByKey.set(apiKey, Date.now() + Math.max(waitMs, 0));
+    if (waitMs > 0) await sleep(waitMs);
+  }
+
   // 모든 생성 요청에 공통으로 붙이는 지침. 마크다운/수식 표기 규칙은 화면 렌더러
   // (markdownRender.js, KaTeX)가 실제로 인식하는 구분자와 정확히 맞춰야 한다 —
   // 렌더러는 통화 표기($100 등)와 헷갈리지 않도록 홑따옴표 $ 는 수식 구분자로 안 쓰고
@@ -107,7 +121,23 @@ const AIExplain = (() => {
   개정되었을 수 있으니 시행일 기준으로 최신 조문을 우선할 것.**
 - 해설 본문만 출력하고, "네, 알겠습니다" 같은 인사말이나 부연 설명은 붙이지 말 것.`;
 
+  /** 429/RESOURCE_EXHAUSTED 오류 바디에서 구글이 실어 보내는 실제 사유 문자열과,
+   * (있으면) 서버가 권장하는 재시도 대기시간(RetryInfo.retryDelay, 예: "38s")을 뽑아낸다.
+   * 예전엔 이 detail을 버리고 "요청이 몰려…" 같은 뭉뚱그린 메시지만 보여줬는데, 구글
+   * 에러 메시지엔 보통 "어떤 할당량 지표"를 초과했는지(분당 요청수인지, 하루 요청수인지,
+   * 분당 토큰수인지 등)가 그대로 적혀 있어서 원인 파악에 훨씬 도움이 된다. */
+  function parseErrorDetail(json) {
+    const detail = json?.error?.message || '';
+    const status = json?.error?.status || '';
+    let retryDelayMs = null;
+    const retryInfo = (json?.error?.details || []).find((d) => d['@type'] === 'type.googleapis.com/google.rpc.RetryInfo');
+    const m = retryInfo && /^([\d.]+)s$/.exec(retryInfo.retryDelay || '');
+    if (m) retryDelayMs = Math.round(parseFloat(m[1]) * 1000);
+    return { detail, status, retryDelayMs };
+  }
+
   async function callGemini({ apiKey, model, parts, useGrounding }) {
+    await throttle(apiKey);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     const body = { contents: [{ role: 'user', parts }] };
     if (useGrounding) body.tools = [{ googleSearch: {} }];
@@ -116,20 +146,18 @@ const AIExplain = (() => {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(body),
     });
-    if (res.status === 429) {
-      const err = new Error('요청이 몰려 잠시 대기 후 재시도합니다(429).');
-      err.rateLimited = true;
-      err.quotaExhausted = true; // 여러 키를 등록해뒀다면 withKeyRotation()이 다음 키로 넘어간다
-      throw err;
-    }
     if (!res.ok) {
-      let detail = '';
-      let status = '';
-      try { const j = await res.json(); detail = j.error?.message || ''; status = j.error?.status || ''; } catch (e) { /* 무시 */ }
+      let parsed = { detail: '', status: '', retryDelayMs: null };
+      try { parsed = parseErrorDetail(await res.json()); } catch (e) { /* 무시 */ }
+      const { detail, status, retryDelayMs } = parsed;
       const err = new Error(`Gemini API 오류 (${res.status})${detail ? ': ' + detail : ''}`);
       // RESOURCE_EXHAUSTED는 보통 429로 오지만, 드물게 다른 상태코드에 이 reason이
       // 실려오는 경우도 있어 문자열로도 한 번 더 확인해서 로테이션 대상에 포함시킨다.
-      if (status === 'RESOURCE_EXHAUSTED' || /quota/i.test(detail)) err.quotaExhausted = true;
+      if (res.status === 429 || status === 'RESOURCE_EXHAUSTED' || /quota/i.test(detail)) {
+        err.quotaExhausted = true; // 여러 키를 등록해뒀다면 withKeyRotation()이 다음 키로 넘어간다
+        err.rateLimited = true;
+      }
+      if (retryDelayMs) err.retryDelayMs = retryDelayMs;
       throw err;
     }
     const data = await res.json();
@@ -156,13 +184,16 @@ const AIExplain = (() => {
 
   /** 429(rate limit)만 짧은 대기 후 재시도, 그 외 오류는 바로 위로 던진다. 키 로테이션이
    * 어차피 다음 키로 넘어가 주므로, 여기서는 "진짜 순간적인 튐"만 한 번 커버할 정도로
-   * 짧게(재시도 1회) 잡아둔다 — 이미 소진된 키를 붙잡고 오래 기다리지 않기 위해서. */
+   * 짧게(재시도 1회) 잡아둔다 — 이미 소진된 키를 붙잡고 오래 기다리지 않기 위해서.
+   * 서버가 RetryInfo로 대기시간을 알려줬으면(e.retryDelayMs) 그 값을 우선 쓰고,
+   * 없으면 기본 1.2초 — 다만 서버 권장값이 너무 길면(예: 하루 할당량 소진으로 인한
+   * 수십 초 대기) 어차피 로테이션이 다음 키로 넘어갈 몫이니 최대 5초로 캡을 둔다. */
   async function withRetry(fn, retries = 1) {
     let lastErr;
     for (let i = 0; i <= retries; i++) {
       try { return await fn(); } catch (e) {
         lastErr = e;
-        if (e.rateLimited && i < retries) { await sleep(1200); continue; }
+        if (e.rateLimited && i < retries) { await sleep(Math.min(e.retryDelayMs || 1200, 5000)); continue; }
         throw e;
       }
     }
@@ -212,41 +243,76 @@ const AIExplain = (() => {
     return { model, useGrounding };
   }
 
+  /** 문제의 발문(question.stemFullText)+선지 텍스트를 사람이 읽기 좋은 블록으로 합친다.
+   * hasTextChoices인 문제에서 이미지 대신 이 텍스트를 근거로 쓰기 위함. */
+  async function buildQuestionTextBlock(question) {
+    const stem = (window.PDFAnalyze && PDFAnalyze.prettifyMarkers)
+      ? PDFAnalyze.prettifyMarkers(question.stemFullText) : (question.stemFullText || '');
+    const choices = (await DB.getChoicesByQuestion(question.id))
+      .slice().sort((a, b) => (a.markerIndex || 0) - (b.markerIndex || 0));
+    const choiceLines = choices.map((c) => {
+      const marker = (window.PDFAnalyze && PDFAnalyze.markerToPlain) ? PDFAnalyze.markerToPlain(c.marker) : (c.marker || '');
+      return `${marker} ${c.text || ''}`;
+    }).join('\n');
+    return `[문제 발문]\n${stem || '(발문 텍스트 없음)'}\n\n[선지]\n${choiceLines || '(선지 텍스트 없음)'}`;
+  }
+
   /**
-   * 문제 이미지+텍스트로 해설을 생성한다. 이미지는 항상 함께 보낸다(문제 자체가 스캔
-   * 이미지라 표/그림이 텍스트에 안 담기는 경우가 많기 때문 — "이미지도 함께 전송" 설정).
+   * 문제로 해설을 생성한다. **이 문제가 텍스트로 인식돼 있으면(question.hasTextChoices)
+   * 이미지 대신 그 텍스트(발문+선지 원문)를 근거로 쓴다** — 텍스트가 이미 정확하게
+   * 추출돼 있는데 굳이 모델에게 다시 이미지를 읽혀서(OCR을 대신 시켜서) 오차를 만들
+   * 이유가 없고, 토큰/속도 면에서도 이득이기 때문. 텍스트 인식이 안 된 문제만 이미지를
+   * 함께 보낸다(스캔 이미지라 표/그림이 텍스트에 안 담기는 경우가 많음).
    * @param {object} question DB.getQuestion()으로 얻은 문제 레코드
-   * @param {Blob[]} imageBlobs DB.getImageBlobs(question) 결과
+   * @param {Blob[]} imageBlobs DB.getImageBlobs(question) 결과 — question.hasTextChoices가
+   *   true면 이 인자는 무시된다(이미지를 안 쓰므로).
    */
   async function generateForQuestion(question, imageBlobs) {
     const { model, useGrounding } = await commonConfig();
-    const imageParts = await blobsToInlineParts(imageBlobs);
+    const useText = !!question.hasTextChoices;
+    const imageParts = useText ? [] : await blobsToInlineParts(imageBlobs);
     const contextLines = [
       [question.examTitle, question.subject, question.round].filter(Boolean).join(' '),
       `문제 번호: ${question.qnum ?? ''}번`,
-      question.answer ? `이 앱에 등록된 정답: ${question.answer}번 (이 정답을 기준으로 해설할 것)` : '정답이 아직 등록되지 않음 — 이미지 내용을 보고 스스로 정답을 판단해서 해설할 것.',
+      question.answer ? `이 앱에 등록된 정답: ${question.answer}번 (이 정답을 기준으로 해설할 것)` : '정답이 아직 등록되지 않음 — 내용을 보고 스스로 정답을 판단해서 해설할 것.',
     ].filter(Boolean).join('\n');
 
-    const promptText = `다음은 객관식 시험 문제를 스캔한 이미지입니다. 이 문제를 분석해서 해설을
-작성해주세요. 필요하다면(예: 법령/판례가 등장하는 문제, 시사성 있는 통계가 필요한 문제)
-구글 검색으로 최신 정보를 확인한 뒤 반영하세요.
+    const introText = useText
+      ? '다음은 객관식 시험 문제를 텍스트로 정확히 옮긴 내용입니다(이미지가 아니라 원문 텍스트이므로 이 내용을 그대로 근거로 삼아 분석하세요).'
+      : '다음은 객관식 시험 문제를 스캔한 이미지입니다.';
+
+    const promptText = `${introText} 이 문제를 분석해서 해설을 작성해주세요. 필요하다면(예:
+법령/판례가 등장하는 문제, 시사성 있는 통계가 필요한 문제) 구글 검색으로 최신 정보를
+확인한 뒤 반영하세요.
 
 ${COMMON_RULES}
 
 [문제 정보]
-${contextLines}`;
+${contextLines}${useText ? `\n\n${await buildQuestionTextBlock(question)}` : ''}`;
 
     return withKeyRotation((apiKey) => callGemini({ apiKey, model, useGrounding, parts: [{ text: promptText }, ...imageParts] }));
   }
 
   /**
-   * 개별 선지(OX형 등, choices 스토어의 레코드) 하나에 대한 해설을 생성한다.
+   * 개별 선지(OX형 등, choices 스토어의 레코드) 하나에 대한 해설을 생성한다. **소속
+   * 문제가 텍스트로 인식돼 있으면(question.hasTextChoices) 이미지 대신 그 문제의 발문
+   * 텍스트를 함께 근거로 보낸다** — generateForQuestion()과 같은 이유.
    * @param {object} choice DB.getChoice() 레코드 ({ text, marker, ox, ... })
-   * @param {Blob[]} [questionImageBlobs] 선택. 소속 문제의 원본 이미지(참고용, 함께 전송)
+   * @param {object|null} [question] 소속 문제 레코드(DB.getQuestion(choice.questionId)).
+   *   없으면(null) 참고 문맥 없이 선지 텍스트만으로 해설한다.
    */
-  async function generateForChoice(choice, questionImageBlobs) {
+  async function generateForChoice(choice, question) {
     const { model, useGrounding } = await commonConfig();
-    const imageParts = await blobsToInlineParts(questionImageBlobs);
+    const useText = !!(question && question.hasTextChoices);
+    let imageParts = [];
+    let contextBlock = '';
+    if (useText) {
+      const stem = (window.PDFAnalyze && PDFAnalyze.prettifyMarkers)
+        ? PDFAnalyze.prettifyMarkers(question.stemFullText) : (question.stemFullText || '');
+      contextBlock = `참고로 이 선지가 속한 문제의 발문(텍스트로 정확히 옮긴 원문)은 다음과 같습니다:\n${stem || '(발문 텍스트 없음)'}`;
+    } else if (question) {
+      imageParts = await blobsToInlineParts(await DB.getImageBlobs(question));
+    }
     const marker = (window.PDFAnalyze && PDFAnalyze.markerToPlain) ? PDFAnalyze.markerToPlain(choice.marker) : (choice.marker || '');
     const oxLine = choice.ox
       ? `참고: 이 선지는 사람이 미리 "${choice.ox}"로 정오 판정을 해뒀습니다. 이 판정을 기준으로 왜 그런지 해설하세요.`
@@ -260,6 +326,7 @@ ${COMMON_RULES}
 
 [선지 ${marker}] ${choice.text || ''}
 ${oxLine}
+${contextBlock}
 ${imageParts.length ? '(첨부한 이미지는 이 선지가 속한 원본 문제입니다 — 필요할 때만 참고하세요.)' : ''}`;
 
     return withKeyRotation((apiKey) => callGemini({ apiKey, model, useGrounding, parts: [{ text: promptText }, ...imageParts] }));
@@ -277,7 +344,7 @@ ${imageParts.length ? '(첨부한 이미지는 이 선지가 속한 원본 문�
     });
     if (!res.ok) {
       let detail = '';
-      try { detail = (await res.json()).error?.message || ''; } catch (e) { /* 무시 */ }
+      try { detail = parseErrorDetail(await res.json()).detail; } catch (e) { /* 무시 */ }
       throw new Error(`(${res.status})${detail ? ': ' + detail : ''}`);
     }
   }
