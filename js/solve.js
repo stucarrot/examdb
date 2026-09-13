@@ -46,6 +46,11 @@ const SolveUI = (() => {
   let timerQid = null;
   let timerStartTs = 0;
 
+  // render()가 마지막으로 그린 문제 id. 답 선택/정답보기 토글처럼 "같은 문제를 다시
+  // 그리는" 호출인지, goTo()처럼 "실제로 다른 문제로 이동하는" 호출인지 구분하는 데 쓴다
+  // (같은 문제면 스크롤 위치를 유지, 문제가 바뀌면 스크롤을 맨 위로 초기화).
+  let renderedQid = null;
+
   function el(sel, root = document) { return root.querySelector(sel); }
   function elAll(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
   function escapeHtml(s) {
@@ -398,6 +403,16 @@ const SolveUI = (() => {
     const q = questions[session.index];
     if (!q) return;
 
+    // 답 선택/정답보기 토글처럼 "같은 문제"를 다시 그리는 호출이면 지금 스크롤 위치를
+    // 기억해뒀다가 새로 그린 뒤 그대로 복원한다. 문제 자체가 바뀐 경우(renderedQid !== q.id,
+    // 즉 goTo()를 거쳐온 경우)는 복원하지 않아 자연스럽게 스크롤이 맨 위로 초기화된다.
+    const sameQuestion = renderedQid === q.id;
+    const prevReadingArea = el('.tvReadingArea');
+    const savedTextScrollTop = sameQuestion && prevReadingArea ? prevReadingArea.scrollTop : 0;
+    const prevImageArea = el('#solveImageArea');
+    const savedImageScrollTop = sameQuestion && prevImageArea ? prevImageArea.scrollTop : 0;
+    renderedQid = q.id;
+
     ensureTimerFor(q.id);
 
     el('#solveMetaCode').textContent = q.code || q.examTitle || '';
@@ -420,10 +435,15 @@ const SolveUI = (() => {
         choicesCache.set(q.id, list);
       }
       renderTextArea(q, choicesCache.get(q.id));
+      if (savedTextScrollTop) {
+        const readingArea = el('.tvReadingArea');
+        if (readingArea) readingArea.scrollTop = savedTextScrollTop;
+      }
     } else {
       const imgArea = el('#solveImageArea');
       imgArea.innerHTML = urlCache.get(q.id).map((u) => `<img src="${u}" alt="문제 이미지">`).join('');
       imgArea.classList.toggle('layout-row', q.partsLayout === 'row');
+      if (savedImageScrollTop) imgArea.scrollTop = savedImageScrollTop;
     }
 
     renderChoices();
