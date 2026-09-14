@@ -9,6 +9,18 @@ const App = (() => {
     if (name === 'solve') SolveUI.onShow();
   }
 
+  /** 문제풀이 화면의 "📝 직접입력" 버튼 등에서 새 브라우저 탭으로 `?qid=<문제id>`를 붙여
+   * 이 앱을 다시 열었을 때, 그 쿼리스트링을 보고 라이브러리 탭으로 전환한 뒤 해당 문제의
+   * 상세 뷰어를 자동으로 열어준다. 쿼리가 없으면(평소처럼 그냥 열었을 때) 아무 영향 없음 —
+   * 기존 "가져오기" 탭으로 시작하는 흐름 그대로 유지. */
+  async function openDeepLinkIfAny() {
+    const qid = new URLSearchParams(location.search).get('qid');
+    if (!qid) return false;
+    switchTab('library');
+    await LibraryUI.openDetail(qid);
+    return true;
+  }
+
   async function init() {
     document.querySelectorAll('.tabBtn').forEach((btn) => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -23,8 +35,9 @@ const App = (() => {
     SettingsUI.init();
     await TextViewPrefs.load(); // 텍스트 뷰 글자크기/테마 설정을 미리 읽어둬야 첫 렌더부터 바로 반영됨
 
-    LibraryUI.refresh();
-    switchTab('import');
+    await LibraryUI.refresh();
+    const openedDeepLink = await openDeepLinkIfAny();
+    if (!openedDeepLink) switchTab('import');
   }
 
   return { switchTab, init };

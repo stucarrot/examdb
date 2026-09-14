@@ -1091,6 +1091,7 @@ textarea { resize: vertical; }
 .solveExplainHead h2 { margin: 0; font-size: 17px; }
 .solveExplainBody { padding: 4px 2px; }
 .solveExplainGenWrap { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
+.solveExplainActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 
 /* 설정 탭 — 여러 줄 API 키 입력란. 초점이 없을 때는 흐리게 가려서 어깨너머로 보이거나
    화면 공유 중 실수로 노출되는 걸 줄이고, 클릭(포커스)하면 또렷하게 보인다(순수 CSS

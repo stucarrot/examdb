@@ -85,6 +85,7 @@ const SolveUI = (() => {
     el('#solveExplainBtn').addEventListener('click', openExplainModal);
     el('#solveExplainCloseBtn').addEventListener('click', () => el('#solveExplainModal').classList.add('hidden'));
     el('#solveExplainGenBtn').addEventListener('click', onSolveExplainGenerate);
+    el('#solveExplainManualBtn').addEventListener('click', onManualExplainClick);
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
     el('#solveTextToggle').addEventListener('click', onTextToggleClick);
     el('#solveTimer').addEventListener('click', onTimerToggleClick);
@@ -482,6 +483,20 @@ const SolveUI = (() => {
       genWrap.classList.remove('hidden');
     }
     el('#solveExplainModal').classList.remove('hidden');
+  }
+
+  /** "📝 직접입력" — AI 생성 대신 라이브러리의 상세 편집(해설 textarea)에서 직접 타이핑해
+   * 넣고 싶을 때 쓴다. 지금 풀고 있는 이 문제풀이 화면(현재 탭)은 그대로 둔 채, 해당 문제의
+   * 라이브러리 뷰어를 완전히 새 브라우저 탭으로 띄운다(같은 앱을 ?qid=문제id 쿼리스트링과
+   * 함께 다시 열면, main.js의 초기화 로직이 그 쿼리를 보고 라이브러리 탭 + 상세 뷰어를 자동으로
+   * 열어준다 — index.html/js/main.js 참고). 같은 IndexedDB를 그대로 보고 쓰므로 새 탭에서
+   * 해설을 저장하면, 이 문제풀이 탭으로 돌아와도(다음에 다시 열 때) 그대로 반영된다.
+   * AI 해설 생성 버튼/로직은 건드리지 않고 완전히 별개로 동작한다. */
+  function onManualExplainClick() {
+    const q = questions[session.index];
+    if (!q) return;
+    const url = `${location.pathname}?qid=${encodeURIComponent(q.id)}`;
+    window.open(url, '_blank');
   }
 
   async function onSolveExplainGenerate() {

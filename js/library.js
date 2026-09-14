@@ -1594,7 +1594,7 @@ const LibraryUI = (() => {
     renderTagManagerList();
   }
 
-  return { init, refresh, onShow };
+  return { init, refresh, onShow, openDetail };
 })();
 
 window.LibraryUI = LibraryUI;
