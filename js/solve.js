@@ -15,6 +15,7 @@ const SolveUI = (() => {
   const SESSION_KEY = 'solveSession';
   const TEXT_MODE_KEY = 'solveTextModePref';
   const TIMER_MODE_KEY = 'solveTimerModePref';
+  const MARK_HIDE_KEY = 'solveMarkHidePref';
 
   let allQuestions = [];      // 설정 화면 필터링용 전체 문제 캐시
   let matched = [];           // 현재 필터 조건에 맞는 문제들
@@ -42,6 +43,9 @@ const SolveUI = (() => {
   //    (여러 번 들락날락한 시간을 다 더한 값 + 지금 보는 중인 시간).
   // 타이머 배지(#solveTimer)를 클릭하면 두 모드를 토글(onTimerToggleClick).
   let timerMode = 'perVisit';
+  // 문제 마크(이모지 프리셋) 표시 여부 — 라이브러리/목록에서는 항상 보이지만, 문제풀이
+  // 중에는 방해될 수 있어 숨길 수 있게 함(전역 선호값, 다음 진입 때도 이어서 유지).
+  let marksHidden = false;
   let timerInterval = null;
   let timerQid = null;
   let timerStartTs = 0;
@@ -89,6 +93,7 @@ const SolveUI = (() => {
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
     el('#solveTextToggle').addEventListener('click', onTextToggleClick);
     el('#solveTimer').addEventListener('click', onTimerToggleClick);
+    el('#solveMarkToggle').addEventListener('click', onMarkToggleClick);
 
     // ---- 드로어(문제 목록) ----
     el('#solveListBtn').addEventListener('click', openDrawer);
@@ -119,6 +124,8 @@ const SolveUI = (() => {
     textMode = !!(await DB.getMeta(TEXT_MODE_KEY));
     const savedTimerMode = await DB.getMeta(TIMER_MODE_KEY);
     if (savedTimerMode === 'cumulative' || savedTimerMode === 'perVisit') timerMode = savedTimerMode;
+    marksHidden = !!(await DB.getMeta(MARK_HIDE_KEY));
+    updateMarkToggleBtn();
 
     const persisted = await DB.getMeta(SESSION_KEY);
     if (persisted && persisted.questionIds && persisted.questionIds.length && !persisted.submitted) {
@@ -377,6 +384,33 @@ const SolveUI = (() => {
   /** 타이머 배지를 눌러 "방금 들어온 뒤 경과 시간(perVisit)"과 "이번 문제풀이에서 이 문제에
    * 머문 총 누적 시간(cumulative)" 표시를 토글한다. 실제 누적 자체는 항상 진행 중이므로
    * 토글해도 시간이 끊기거나 리셋되지 않는다. */
+  /** 상단바 🏷️ 버튼 — 문제풀이 중 마크 배지 표시/숨기기 토글(선호값은 다음 진입 때도 유지). */
+  function onMarkToggleClick() {
+    marksHidden = !marksHidden;
+    DB.setMeta(MARK_HIDE_KEY, marksHidden);
+    updateMarkToggleBtn();
+    updateMarkBadge();
+  }
+
+  function updateMarkToggleBtn() {
+    const btn = el('#solveMarkToggle');
+    if (!btn) return;
+    btn.textContent = marksHidden ? '🚫' : '🏷️';
+    btn.title = marksHidden ? '문제 마크 숨김 (클릭하면 표시)' : '문제 마크 표시 중 (클릭하면 숨김)';
+  }
+
+  /** 뷰어 구석의 마크 배지(#solveMarkBadge)를 지금 문제(questions[session.index])와
+   * marksHidden 상태에 맞게 다시 그린다. 이미지/텍스트 두 모드의 공통 부모
+   * (.solveViewerWrap) 안에 있어서 모드 전환과 무관하게 항상 같은 자리에 표시된다. */
+  function updateMarkBadge() {
+    const badge = el('#solveMarkBadge');
+    if (!badge) return;
+    const q = session ? questions[session.index] : null;
+    const html = !marksHidden && q ? Marks.badgeHtml(q.mark, 'markBadge-viewer') : '';
+    badge.innerHTML = html;
+    badge.classList.toggle('hidden', !html);
+  }
+
   function onTimerToggleClick() {
     timerMode = timerMode === 'cumulative' ? 'perVisit' : 'cumulative';
     DB.setMeta(TIMER_MODE_KEY, timerMode);
@@ -447,6 +481,7 @@ const SolveUI = (() => {
       if (savedImageScrollTop) imgArea.scrollTop = savedImageScrollTop;
     }
 
+    updateMarkBadge();
     renderChoices();
     renderAnswerPanel();
     updateBottomBar();

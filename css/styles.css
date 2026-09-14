@@ -400,7 +400,8 @@ textarea { resize: vertical; }
   height: 100%; min-width: 0; box-sizing: border-box;
 }
 .libRow:hover { background: #f6f8ff; border-color: var(--accent); }
-.rowThumb { width: 56px; height: 72px; object-fit: cover; border: 1px solid var(--border); border-radius: 4px; background: #fafafa; flex-shrink: 0; }
+.rowThumbWrap { position: relative; flex-shrink: 0; }
+.rowThumb { width: 56px; height: 72px; object-fit: cover; border: 1px solid var(--border); border-radius: 4px; background: #fafafa; flex-shrink: 0; display: block; }
 .rowInfo { flex: 1; min-width: 0; }
 .rowTags { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
 .tagChip { background: #eef0f8; color: var(--accent-dark); font-size: 11px; padding: 1px 7px; border-radius: 10px; }
@@ -429,6 +430,26 @@ textarea { resize: vertical; }
 }
 .libCardTags { display: flex; gap: 4px; flex-wrap: wrap; }
 .libCardStatus { display: flex; gap: 6px; margin-top: auto; flex-wrap: wrap; }
+
+/* ---------- 문제 마크(이모지 프리셋) — 태그와 별개, 문제 구석에 작게 표시 ----------
+ * .markBadge는 항상 "표시 전용"(pointer-events:none)이라 카드/행/뷰어를 클릭하는 동작을
+ * 가로채지 않는다. 실제로 값을 바꾸는 곳은 상세 편집 사이드바의 .markPickBtn 버튼뿐. */
+.markBadge {
+  position: absolute; font-size: 13px; line-height: 1; padding: 3px 5px;
+  background: rgba(255,255,255,.95); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25); pointer-events: none; z-index: 6; user-select: none;
+}
+.markBadge-tr { top: 5px; right: 5px; }
+.markBadge-viewer { top: 12px; right: 12px; font-size: 18px; padding: 5px 8px; }
+
+.markPicker { display: flex; gap: 6px; flex-wrap: wrap; }
+.markPickBtn {
+  width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+  background: #fff; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.markPickBtn:hover { border-color: var(--accent); }
+.markPickBtn.active { border-color: var(--accent); background: #eef0f8; color: var(--text); box-shadow: 0 0 0 2px rgba(52,84,209,.15) inset; }
 
 /* ---------- 선지 보기(라이브러리 3번째 탭) ---------- */
 .choiceList { max-height: calc(100vh - 300px); min-height: 360px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
@@ -693,6 +714,12 @@ textarea { resize: vertical; }
 .solveTimer:hover { background: #323749; border-color: rgba(255,255,255,.15); }
 .solveTimer:active { opacity: .8; }
 .solveGradeBtn { flex-shrink: 0; padding: 8px 14px; font-size: 13px; }
+
+/* 이미지/텍스트 두 영역을 감싸는 위치 기준 컨테이너 — 마크 배지(#solveMarkBadge)를 이
+   래퍼의 자식(형제)으로 절대배치해서, 안쪽 영역이 스크롤돼도 배지는 구석에 고정되고
+   본문(이미지/텍스트) 스크롤 자체는 그대로 각 영역이 담당하도록 분리한다. */
+.solveViewerWrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.solveViewerWrap .markBadge-viewer.hidden { display: none; }
 
 .solveImageArea {
   flex: 1 1 auto; min-height: 0; overflow: auto; background: #0e0f16;

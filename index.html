@@ -444,9 +444,13 @@
         <div id="detailTextView" class="detailTextView hidden"></div>
         <button id="detailNextBtn" class="detailNavArrow detailNavArrow-next hidden" title="다음 이미지 (→)">▶</button>
         <div id="detailImageCounter" class="detailImageCounter hidden"></div>
+        <span id="detailMarkBadge" class="markBadge markBadge-viewer hidden"></span>
       </div>
       <aside class="detailSidebar">
         <div class="detailForm">
+          <label>마크
+            <div id="detailMarkPicker" class="markPicker"></div>
+          </label>
           <label>태그 (쉼표로 구분)
             <input type="text" id="detailTags" placeholder="예: 법조문형, 계산형" list="allTagList">
           </label>
@@ -783,13 +787,17 @@
           <span id="solveMetaSub" class="solveMetaSub"></span>
         </div>
         <span id="solveTimer" class="solveTimer" title="이 문제에 머무른 시간">⏱ 00:00</span>
+        <button id="solveMarkToggle" class="solveIconBtn" title="문제 마크 표시/숨기기">🏷️</button>
         <button id="solveTextToggle" class="solveIconBtn hidden" title="설문+선지가 텍스트로 모두 인식된 문제에서 이미지 대신 텍스트로 보기">🔤</button>
         <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
         <button id="solveGradeBtn" class="btnPrimary solveGradeBtn">채점</button>
       </div>
 
-      <div id="solveImageArea" class="solveImageArea"></div>
-      <div id="solveTextArea" class="solveTextArea hidden"></div>
+      <div class="solveViewerWrap">
+        <div id="solveImageArea" class="solveImageArea"></div>
+        <div id="solveTextArea" class="solveTextArea hidden"></div>
+        <span id="solveMarkBadge" class="markBadge markBadge-viewer hidden"></span>
+      </div>
 
       <div id="solveAnswerPanel" class="solveAnswerPanel hidden"></div>
 
@@ -872,6 +880,7 @@
   integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
 
 <script src="js/db.js"></script>
+<script src="js/marks.js"></script>
 <script src="js/pdfAnalyze.js"></script>
 <script src="js/markdownRender.js"></script>
 <script src="js/aiExplain.js"></script>

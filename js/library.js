@@ -152,6 +152,14 @@ const LibraryUI = (() => {
     const mobileSaveBtn = el('#detailMobileSaveBtn');
     if (mobileSaveBtn) mobileSaveBtn.addEventListener('click', saveDetail);
     el('#detailDelete').addEventListener('click', deleteDetail);
+    // 마크(이모지 프리셋) 선택 — 태그/정답/해설/메모와 마찬가지로 "저장" 버튼을 눌러야
+    // 실제 DB에 반영된다(saveDetail 참고). 여기서는 버튼 활성 표시 + 구석 배지 미리보기만 갱신.
+    el('#detailMarkPicker').addEventListener('click', (e) => {
+      const btn = e.target.closest('.markPickBtn');
+      if (!btn) return;
+      elAll('.markPickBtn', el('#detailMarkPicker')).forEach((b) => b.classList.toggle('active', b === btn));
+      updateDetailMarkBadge(btn.dataset.mark || '');
+    });
     el('#detailExplainEditTab').addEventListener('click', () => setDetailExplainTab('edit'));
     el('#detailExplainPreviewTab').addEventListener('click', () => setDetailExplainTab('preview'));
     el('#detailExplainAiBtn').addEventListener('click', onDetailAiExplain);
@@ -644,10 +652,14 @@ const LibraryUI = (() => {
     });
     row.appendChild(chk);
 
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'rowThumbWrap';
     const thumb = document.createElement('img');
     thumb.className = 'rowThumb';
     thumb.src = q.thumb || '';
-    row.appendChild(thumb);
+    thumbWrap.appendChild(thumb);
+    if (q.mark) thumbWrap.insertAdjacentHTML('beforeend', Marks.badgeHtml(q.mark, 'markBadge-tr'));
+    row.appendChild(thumbWrap);
 
     const info = document.createElement('div');
     info.className = 'rowInfo';
@@ -697,6 +709,7 @@ const LibraryUI = (() => {
       updateSelectionBar();
     });
     thumbWrap.appendChild(chk);
+    if (q.mark) thumbWrap.insertAdjacentHTML('beforeend', Marks.badgeHtml(q.mark, 'markBadge-tr'));
     card.appendChild(thumbWrap);
 
     const body = document.createElement('div');
@@ -830,6 +843,8 @@ const LibraryUI = (() => {
 
     el('#detailTitle').textContent = `${q.code} · ${q.qnum}번`;
     el('#detailSubtitle').textContent = q.examTitle || '';
+    el('#detailMarkPicker').innerHTML = Marks.pickerHtml(q.mark || '');
+    updateDetailMarkBadge(q.mark || '');
     el('#detailTags').value = (q.tags || []).join(', ');
     el('#detailAnswer').value = q.answer || '';
     el('#detailExplanation').value = q.explanation || '';
@@ -849,6 +864,17 @@ const LibraryUI = (() => {
     updateDetailNav();
     renderDetailBody(q);
     el('#detailPanel').classList.remove('hidden');
+  }
+
+  /** 뷰어 구석의 마크 배지(#detailMarkBadge)를 markId 기준으로 다시 그린다.
+   * 이미지 모드/텍스트 모드 둘 다의 공통 부모(.detailViewer) 안에 있어서 모드 전환과
+   * 무관하게 항상 같은 자리에 표시된다. */
+  function updateDetailMarkBadge(markId) {
+    const badge = el('#detailMarkBadge');
+    if (!badge) return;
+    const html = Marks.badgeHtml(markId, 'markBadge-viewer');
+    badge.innerHTML = html;
+    badge.classList.toggle('hidden', !html);
   }
 
   /** 지금 이 문제에 대해 실제로 보여줄 모드. "텍스트로 보기"를 선호(detailTextPref)해도
@@ -1106,6 +1132,8 @@ const LibraryUI = (() => {
     if (!currentDetailId) return;
     const id = currentDetailId;
     const q = await DB.getQuestion(id);
+    const activeMarkBtn = el('.markPickBtn.active', el('#detailMarkPicker'));
+    q.mark = activeMarkBtn ? (activeMarkBtn.dataset.mark || '') : (q.mark || '');
     q.tags = el('#detailTags').value.split(',').map((s) => s.trim()).filter(Boolean);
     q.answer = el('#detailAnswer').value.trim();
     q.explanation = el('#detailExplanation').value;
