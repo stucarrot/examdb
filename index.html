@@ -784,13 +784,24 @@
         <button id="solveExitBtn" class="solveIconBtn" title="나가기 (이어서 풀 수 있게 저장됨)">✕</button>
         <div class="solveTopMeta">
           <span id="solveMetaCode" class="solveMetaCode"></span>
-          <span id="solveMetaSub" class="solveMetaSub"></span>
         </div>
         <span id="solveTimer" class="solveTimer" title="이 문제에 머무른 시간">⏱ 00:00</span>
-        <button id="solveMarkToggle" class="solveIconBtn" title="문제 마크 표시/숨기기">🏷️</button>
-        <button id="solveTextToggle" class="solveIconBtn hidden" title="설문+선지가 텍스트로 모두 인식된 문제에서 이미지 대신 텍스트로 보기">🔤</button>
+        <button id="solveViewSettingsBtn" class="solveIconBtn" title="보기 설정 (이미지·텍스트 / 마크 / 글자·테마)">🎨</button>
         <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
         <button id="solveGradeBtn" class="btnPrimary solveGradeBtn">채점</button>
+      </div>
+
+      <div id="solveViewSettingsPanel" class="solveViewSettingsPanel hidden">
+        <div class="tvControlGroup hidden" id="solveViewModeGroup">
+          <span class="tvControlLabel">보기 방식</span>
+          <button type="button" class="tvBtn" id="solveViewModeImageBtn">🖼 이미지</button>
+          <button type="button" class="tvBtn" id="solveViewModeTextBtn">🔤 텍스트</button>
+        </div>
+        <div class="tvControlGroup">
+          <span class="tvControlLabel">문제 마크</span>
+          <button type="button" class="tvBtn" id="solveMarkVisBtn"></button>
+        </div>
+        <div id="solveTvControlsHost"></div>
       </div>
 
       <div class="solveViewerWrap">
@@ -853,7 +864,10 @@
 <div id="solveExplainModal" class="overlay hidden">
   <div class="modalBox solveExplainBox">
     <div class="solveExplainHead">
-      <h2>해설</h2>
+      <div class="solveExplainHeadCol">
+        <span id="solveExplainMeta" class="solveExplainMeta"></span>
+        <h2>해설</h2>
+      </div>
       <button id="solveExplainCloseBtn" class="btnGhost">✕ 닫기</button>
     </div>
     <div id="solveExplainBody" class="markdownBody solveExplainBody"></div>

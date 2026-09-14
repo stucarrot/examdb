@@ -26,11 +26,10 @@ const SolveUI = (() => {
   let urlCache = new Map();   // qid -> [objectURL, ...]
   let choicesCache = new Map(); // qid -> choices[] (텍스트 보기용, hasTextChoices인 문제만 채워짐)
   let textMode = false;       // 이미지 대신 텍스트로 풀기 — 설정을 기억해뒀다가 다음 진입 때도 이어서 씀
-  // 텍스트로 풀기 화면의 글자크기/테마 설정 패널 — 문제 공간을 최대한 확보하기 위해
-  // 기본은 접힌 상태(true)로 시작한다. 사용자가 한 번 펼치면 문제를 넘기거나 드로어를
-  // 열어도 그 상태 그대로 유지되고(module-level 변수라 브라우저 새로고침 전까지는 안 잊음),
-  // 다시 접고 싶으면 토글 버튼을 눌러 접으면 된다.
-  let solveTvCollapsed = true;
+  // "🎨 보기 설정" 패널(이미지/텍스트 전환, 마크 표시, 글자·테마)이 지금 펼쳐져 있는지.
+  // 세션이 끝나거나 새로 시작해도 딱히 기억해둘 필요는 없는 값이라(늘 접힌 채로 시작하는 게
+  // 자연스러움) DB.meta에 저장하지 않고 모듈 변수로만 둔다.
+  let viewSettingsOpen = false;
   let drawerOpen = false;
   let touchState = null;      // 스와이프 제스처 추적
 
@@ -91,9 +90,11 @@ const SolveUI = (() => {
     el('#solveExplainGenBtn').addEventListener('click', onSolveExplainGenerate);
     el('#solveExplainManualBtn').addEventListener('click', onManualExplainClick);
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
-    el('#solveTextToggle').addEventListener('click', onTextToggleClick);
     el('#solveTimer').addEventListener('click', onTimerToggleClick);
-    el('#solveMarkToggle').addEventListener('click', onMarkToggleClick);
+    el('#solveViewSettingsBtn').addEventListener('click', onViewSettingsToggleClick);
+    el('#solveViewModeImageBtn').addEventListener('click', () => onViewModeBtnClick('image'));
+    el('#solveViewModeTextBtn').addEventListener('click', () => onViewModeBtnClick('text'));
+    el('#solveMarkVisBtn').addEventListener('click', onMarkVisBtnClick);
 
     // ---- 드로어(문제 목록) ----
     el('#solveListBtn').addEventListener('click', openDrawer);
@@ -125,7 +126,7 @@ const SolveUI = (() => {
     const savedTimerMode = await DB.getMeta(TIMER_MODE_KEY);
     if (savedTimerMode === 'cumulative' || savedTimerMode === 'perVisit') timerMode = savedTimerMode;
     marksHidden = !!(await DB.getMeta(MARK_HIDE_KEY));
-    updateMarkToggleBtn();
+    updateMarkVisBtn();
 
     const persisted = await DB.getMeta(SESSION_KEY);
     if (persisted && persisted.questionIds && persisted.questionIds.length && !persisted.submitted) {
@@ -327,6 +328,8 @@ const SolveUI = (() => {
     el('#solveOverlay').classList.remove('hidden');
     el('#solveResult').classList.add('hidden');
     el('#solvePlay').classList.remove('hidden');
+    viewSettingsOpen = false;
+    el('#solveViewSettingsPanel').classList.add('hidden');
     closeDrawer();
     buildDrawerGrid();
     render();
@@ -384,18 +387,20 @@ const SolveUI = (() => {
   /** 타이머 배지를 눌러 "방금 들어온 뒤 경과 시간(perVisit)"과 "이번 문제풀이에서 이 문제에
    * 머문 총 누적 시간(cumulative)" 표시를 토글한다. 실제 누적 자체는 항상 진행 중이므로
    * 토글해도 시간이 끊기거나 리셋되지 않는다. */
-  /** 상단바 🏷️ 버튼 — 문제풀이 중 마크 배지 표시/숨기기 토글(선호값은 다음 진입 때도 유지). */
-  function onMarkToggleClick() {
+  /** 보기 설정 패널의 "문제 마크" 버튼 — 문제풀이 중 마크 배지 표시/숨기기 토글
+   * (선호값은 다음 진입 때도 유지). */
+  function onMarkVisBtnClick() {
     marksHidden = !marksHidden;
     DB.setMeta(MARK_HIDE_KEY, marksHidden);
-    updateMarkToggleBtn();
+    updateMarkVisBtn();
     updateMarkBadge();
   }
 
-  function updateMarkToggleBtn() {
-    const btn = el('#solveMarkToggle');
+  function updateMarkVisBtn() {
+    const btn = el('#solveMarkVisBtn');
     if (!btn) return;
-    btn.textContent = marksHidden ? '🚫' : '🏷️';
+    btn.textContent = marksHidden ? '🚫 숨김' : '🏷️ 표시';
+    btn.classList.toggle('active', !marksHidden);
     btn.title = marksHidden ? '문제 마크 숨김 (클릭하면 표시)' : '문제 마크 표시 중 (클릭하면 숨김)';
   }
 
@@ -451,11 +456,10 @@ const SolveUI = (() => {
     ensureTimerFor(q.id);
 
     el('#solveMetaCode').textContent = q.code || q.examTitle || '';
-    el('#solveMetaSub').textContent = `${q.examTitle || ''} · ${q.subject || ''} · ${q.qnum ?? ''}번`;
 
     if (!urlCache.has(q.id)) urlCache.set(q.id, await DB.getImageURLs(q));
 
-    el('#solveTextToggle').classList.toggle('hidden', !q.hasTextChoices);
+    renderViewSettingsPanel(q);
     // 텍스트 모드를 켜뒀어도 이 문제가 텍스트 선지를 못 뽑아낸 문제라면(hasTextChoices=false)
     // 이미지로 자동 대체해서 보여준다 — 토글 자체(preference)는 그대로 켜진 채 유지되므로
     // 다음 문제로 넘어가면 다시 텍스트로 보인다.
@@ -507,6 +511,7 @@ const SolveUI = (() => {
     if (!q) return;
     const unlocked = session.submitted || !!session.revealed[q.id];
     if (!unlocked) return;
+    el('#solveExplainMeta').textContent = [q.examType, q.examYear, q.subject].filter(Boolean).join('-');
     el('#solveExplainGenStatus').textContent = '';
     const body = el('#solveExplainBody');
     const genWrap = el('#solveExplainGenWrap');
@@ -573,31 +578,47 @@ const SolveUI = (() => {
       </div>`).join('');
     const area = el('#solveTextArea');
     area.innerHTML = `
-      <div class="tvControlsWrap${solveTvCollapsed ? ' collapsed' : ''}" id="solveTvWrap">
-        <button type="button" class="tvControlsToggle" id="solveTvToggle">
-          <span>🎨 글자·테마 설정</span><span class="tvControlsChevron">${solveTvCollapsed ? '▸' : '▾'}</span>
-        </button>
-        <div class="tvControlsPanel">${TextViewPrefs.controlsHtml()}</div>
-      </div>
       <div class="tvReadingArea">
         <div class="solveTextStem">${stem}</div>
         <div class="solveTextChoices">${choicesHtml}</div>
       </div>
     `;
     TextViewPrefs.applyTo(area.querySelector('.tvReadingArea'));
-    TextViewPrefs.wireControls(area, () => TextViewPrefs.applyTo(area.querySelector('.tvReadingArea')));
-    // 설정 패널 자체는 이미 그려져 있으므로(controlsHtml 안의 버튼들), 펼치기/접기 버튼은
-    // 다시 그리지 않고 접힘 클래스와 화살표 방향만 토글한다 — 읽던 스크롤 위치 등을 안 건드림.
-    el('#solveTvToggle').addEventListener('click', () => {
-      solveTvCollapsed = !solveTvCollapsed;
-      const wrap = el('#solveTvWrap');
-      wrap.classList.toggle('collapsed', solveTvCollapsed);
-      wrap.querySelector('.tvControlsChevron').textContent = solveTvCollapsed ? '▸' : '▾';
+  }
+
+  /** 상단바 "🎨 보기 설정" 패널 — 이미지/텍스트 전환, 마크 표시, 글자크기/테마를 한 곳에
+   * 모아둔 패널. 이미지 모드든 텍스트 모드든 상관없이 항상 접근 가능하도록 상단바 버튼으로
+   * 열고 닫으며(viewSettingsOpen), 매 render()마다 이 문제 기준으로 다시 그린다(특히
+   * "보기 방식" 줄은 hasTextChoices가 아니면 숨겨야 해서 문제마다 달라질 수 있음). */
+  function renderViewSettingsPanel(q) {
+    const modeGroup = el('#solveViewModeGroup');
+    modeGroup.classList.toggle('hidden', !q.hasTextChoices);
+    el('#solveViewModeImageBtn').classList.toggle('active', !textMode || !q.hasTextChoices);
+    el('#solveViewModeTextBtn').classList.toggle('active', textMode && q.hasTextChoices);
+
+    updateMarkVisBtn();
+
+    const host = el('#solveTvControlsHost');
+    host.innerHTML = TextViewPrefs.controlsHtml();
+    TextViewPrefs.wireControls(host, () => {
+      // 지금 텍스트 모드로 보고 있는 중이면 그 읽기 영역에도 즉시 반영(전체 재렌더 없이
+      // 클래스만 다시 계산 — solve.js의 다른 render() 호출들과 마찬가지로 스크롤 유지).
+      const readingArea = el('#solveTextArea .tvReadingArea');
+      if (readingArea) TextViewPrefs.applyTo(readingArea);
     });
   }
 
-  function onTextToggleClick() {
-    textMode = !textMode;
+  function onViewSettingsToggleClick() {
+    viewSettingsOpen = !viewSettingsOpen;
+    el('#solveViewSettingsPanel').classList.toggle('hidden', !viewSettingsOpen);
+  }
+
+  function onViewModeBtnClick(mode) {
+    const q = questions[session.index];
+    if (mode === 'text' && !(q && q.hasTextChoices)) return; // 텍스트 지원 안 되는 문제는 무시
+    const nextTextMode = mode === 'text';
+    if (nextTextMode === textMode) return;
+    textMode = nextTextMode;
     DB.setMeta(TEXT_MODE_KEY, textMode);
     render();
   }
