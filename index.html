@@ -477,7 +477,7 @@
           </label>
           <div class="detailActions">
             <button id="detailDelete" class="btnDanger">이 문제 삭제</button>
-            <button id="detailSave" class="btnPrimary">저장</button>
+            <button id="detailSave" class="btnPrimary detailSaveBtn">저장</button>
           </div>
         </div>
       </aside>
@@ -502,7 +502,10 @@
     <div class="detailMobileSheet" id="detailMobileInfoSheet">
       <div class="detailMobileSheetHead">
         <span>문제 정보</span>
-        <button type="button" class="btnGhost detailMobileSheetClose">✕</button>
+        <div class="detailMobileSheetHeadActions">
+          <button type="button" id="detailMobileSaveBtn" class="btnPrimary small detailSaveBtn">저장</button>
+          <button type="button" class="btnGhost detailMobileSheetClose">✕</button>
+        </div>
       </div>
       <div class="detailMobileSheetBody" id="detailMobileInfoSheetBody"></div>
     </div>

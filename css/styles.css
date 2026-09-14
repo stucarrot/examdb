@@ -995,6 +995,7 @@ textarea { resize: vertical; }
     display: flex; align-items: center; justify-content: space-between;
     padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 700; flex: 0 0 auto;
   }
+  .detailMobileSheetHeadActions { display: flex; align-items: center; gap: 8px; }
   .detailMobileSheetClose { padding: 4px 10px; font-size: 13px; }
   .detailMobileSheetBody {
     flex: 1 1 auto; overflow-y: auto; padding: 14px 16px calc(14px + env(safe-area-inset-bottom));

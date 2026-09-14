@@ -145,6 +145,12 @@ const LibraryUI = (() => {
 
     el('#detailClose').addEventListener('click', closeDetail);
     el('#detailSave').addEventListener('click', saveDetail);
+    // 모바일 "문제정보" 시트 안에는 태그/해설/메모 입력칸이 세로로 길게 늘어서 있어서,
+    // 원래 있던 저장 버튼(맨 아래, .detailActions 안)은 특히 키보드가 떠 있을 때 화면 밖으로
+    // 밀려나 안 보이기 쉽다 — 시트를 스크롤하지 않고도 항상 손이 닿는 시트 헤더에 별도로
+    // 저장 버튼을 하나 더 둔다. 로직은 완전히 같은 saveDetail()을 그대로 호출.
+    const mobileSaveBtn = el('#detailMobileSaveBtn');
+    if (mobileSaveBtn) mobileSaveBtn.addEventListener('click', saveDetail);
     el('#detailDelete').addEventListener('click', deleteDetail);
     el('#detailExplainEditTab').addEventListener('click', () => setDetailExplainTab('edit'));
     el('#detailExplainPreviewTab').addEventListener('click', () => setDetailExplainTab('preview'));
@@ -1118,15 +1124,20 @@ const LibraryUI = (() => {
   }
 
   let savedFlashTimer = null;
-  /** 저장 버튼 옆에 "저장됨" 표시를 잠깐 띄웠다 사라지게 한다(뷰어가 안 닫히니 저장됐다는 피드백이 필요) */
+  /** 저장 버튼(데스크톱 사이드바 하나 + 모바일 시트 헤더 하나, 둘 다 .detailSaveBtn) 위에
+   * "저장됨" 표시를 잠깐 띄웠다 원래 글자로 되돌린다(뷰어가 안 닫히니 저장됐다는 피드백이 필요). */
   function flashSaved() {
-    const btn = el('#detailSave');
-    if (!btn) return;
+    const btns = elAll('.detailSaveBtn');
+    if (!btns.length) return;
     clearTimeout(savedFlashTimer);
-    const original = btn.dataset.origText || btn.textContent;
-    btn.dataset.origText = original;
-    btn.textContent = '저장됨 ✓';
-    savedFlashTimer = setTimeout(() => { btn.textContent = original; }, 1200);
+    btns.forEach((btn) => {
+      const original = btn.dataset.origText || btn.textContent;
+      btn.dataset.origText = original;
+      btn.textContent = '저장됨 ✓';
+    });
+    savedFlashTimer = setTimeout(() => {
+      btns.forEach((btn) => { btn.textContent = btn.dataset.origText || btn.textContent; });
+    }, 1200);
   }
 
   async function deleteDetail() {
