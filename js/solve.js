@@ -30,6 +30,10 @@ const SolveUI = (() => {
   // 세션이 끝나거나 새로 시작해도 딱히 기억해둘 필요는 없는 값이라(늘 접힌 채로 시작하는 게
   // 자연스러움) DB.meta에 저장하지 않고 모듈 변수로만 둔다.
   let viewSettingsOpen = false;
+  // 상단바 "ℹ️ 문제 정보" 패널이 지금 펼쳐져 있는지 — 보기설정 패널과 마찬가지로 항상
+  // 접힌 채로 새로 시작하고, 둘 중 하나를 열면 다른 하나는 자동으로 닫힌다(동시에 두
+  // 패널이 겹쳐서 화면을 많이 차지하지 않도록).
+  let infoOpen = false;
   let drawerOpen = false;
   let touchState = null;      // 스와이프 제스처 추적
 
@@ -91,6 +95,8 @@ const SolveUI = (() => {
     el('#solveExplainManualBtn').addEventListener('click', onManualExplainClick);
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
     el('#solveTimer').addEventListener('click', onTimerToggleClick);
+    el('#solveInfoBtn').addEventListener('click', onInfoToggleClick);
+    el('#solveInfoOpenLibBtn').addEventListener('click', openCurrentQuestionInLibraryTab);
     el('#solveViewSettingsBtn').addEventListener('click', onViewSettingsToggleClick);
     el('#solveViewModeImageBtn').addEventListener('click', () => onViewModeBtnClick('image'));
     el('#solveViewModeTextBtn').addEventListener('click', () => onViewModeBtnClick('text'));
@@ -330,6 +336,8 @@ const SolveUI = (() => {
     el('#solvePlay').classList.remove('hidden');
     viewSettingsOpen = false;
     el('#solveViewSettingsPanel').classList.add('hidden');
+    infoOpen = false;
+    el('#solveInfoPanel').classList.add('hidden');
     closeDrawer();
     buildDrawerGrid();
     render();
@@ -455,7 +463,7 @@ const SolveUI = (() => {
 
     ensureTimerFor(q.id);
 
-    el('#solveMetaCode').textContent = q.code || q.examTitle || '';
+    renderInfoPanel(q);
 
     if (!urlCache.has(q.id)) urlCache.set(q.id, await DB.getImageURLs(q));
 
@@ -511,7 +519,6 @@ const SolveUI = (() => {
     if (!q) return;
     const unlocked = session.submitted || !!session.revealed[q.id];
     if (!unlocked) return;
-    el('#solveExplainMeta').textContent = [q.examType, q.examYear, q.subject].filter(Boolean).join('-');
     el('#solveExplainGenStatus').textContent = '';
     const body = el('#solveExplainBody');
     const genWrap = el('#solveExplainGenWrap');
@@ -533,10 +540,7 @@ const SolveUI = (() => {
    * 해설을 저장하면, 이 문제풀이 탭으로 돌아와도(다음에 다시 열 때) 그대로 반영된다.
    * AI 해설 생성 버튼/로직은 건드리지 않고 완전히 별개로 동작한다. */
   function onManualExplainClick() {
-    const q = questions[session.index];
-    if (!q) return;
-    const url = `${location.pathname}?qid=${encodeURIComponent(q.id)}`;
-    window.open(url, '_blank');
+    openCurrentQuestionInLibraryTab();
   }
 
   async function onSolveExplainGenerate() {
@@ -608,9 +612,47 @@ const SolveUI = (() => {
     });
   }
 
+  /** 상단바 "ℹ️ 문제 정보" 패널 — 코드/시험명/과목/번호 등 짧은 정보 + 라이브러리 새 탭
+   * 바로가기. 상단바가 좁아 늘 잘리던 예전 제목 표시(#solveMetaCode/#solveMetaSub) 대신,
+   * 필요할 때만 눌러서 펼쳐보는 방식으로 뺐다. */
+  function renderInfoPanel(q) {
+    el('#solveInfoTitle').textContent = q.examTitle || q.code || '(제목 없음)';
+    const subParts = [q.code, q.subject, q.qnum != null ? `${q.qnum}번` : ''].filter(Boolean);
+    el('#solveInfoSub').textContent = subParts.join(' · ');
+  }
+
+  function onInfoToggleClick() {
+    infoOpen = !infoOpen;
+    if (infoOpen) closeViewSettingsPanel();
+    el('#solveInfoPanel').classList.toggle('hidden', !infoOpen);
+  }
+
+  function closeInfoPanel() {
+    if (!infoOpen) return;
+    infoOpen = false;
+    el('#solveInfoPanel').classList.add('hidden');
+  }
+
+  /** 지금 보고 있는 문제의 라이브러리 상세 뷰어를 새 브라우저 탭으로 연다. 해설 팝업의
+   * "📝 직접입력"과 문제정보 패널의 🔗 버튼이 이 함수 하나를 공유해서 쓴다(둘 다 목적은
+   * 같음 — 지금 풀이 중인 탭은 그대로 두고 라이브러리 뷰어만 별도 탭으로). */
+  function openCurrentQuestionInLibraryTab() {
+    const q = questions[session.index];
+    if (!q) return;
+    const url = `${location.pathname}?qid=${encodeURIComponent(q.id)}`;
+    window.open(url, '_blank');
+  }
+
   function onViewSettingsToggleClick() {
     viewSettingsOpen = !viewSettingsOpen;
+    if (viewSettingsOpen) closeInfoPanel();
     el('#solveViewSettingsPanel').classList.toggle('hidden', !viewSettingsOpen);
+  }
+
+  function closeViewSettingsPanel() {
+    if (!viewSettingsOpen) return;
+    viewSettingsOpen = false;
+    el('#solveViewSettingsPanel').classList.add('hidden');
   }
 
   function onViewModeBtnClick(mode) {

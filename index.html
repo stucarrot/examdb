@@ -782,13 +782,22 @@
     <div id="solvePlay" class="solvePlay">
       <div class="solveTopBar">
         <button id="solveExitBtn" class="solveIconBtn" title="나가기 (이어서 풀 수 있게 저장됨)">✕</button>
-        <div class="solveTopMeta">
-          <span id="solveMetaCode" class="solveMetaCode"></span>
-        </div>
+        <div class="spacer"></div>
         <span id="solveTimer" class="solveTimer" title="이 문제에 머무른 시간">⏱ 00:00</span>
+        <button id="solveInfoBtn" class="solveIconBtn" title="문제 정보">ℹ️</button>
         <button id="solveViewSettingsBtn" class="solveIconBtn" title="보기 설정 (이미지·텍스트 / 마크 / 글자·테마)">🎨</button>
         <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
         <button id="solveGradeBtn" class="btnPrimary solveGradeBtn">채점</button>
+      </div>
+
+      <div id="solveInfoPanel" class="solveViewSettingsPanel hidden">
+        <div class="solveInfoRow">
+          <div class="solveInfoText">
+            <div id="solveInfoTitle" class="solveInfoTitle"></div>
+            <div id="solveInfoSub" class="solveInfoSub"></div>
+          </div>
+          <button id="solveInfoOpenLibBtn" class="solveIconBtn" title="이 문제를 라이브러리 뷰어로 새 탭에서 열기">🔗</button>
+        </div>
       </div>
 
       <div id="solveViewSettingsPanel" class="solveViewSettingsPanel hidden">
@@ -864,10 +873,7 @@
 <div id="solveExplainModal" class="overlay hidden">
   <div class="modalBox solveExplainBox">
     <div class="solveExplainHead">
-      <div class="solveExplainHeadCol">
-        <span id="solveExplainMeta" class="solveExplainMeta"></span>
-        <h2>해설</h2>
-      </div>
+      <h2>해설</h2>
       <button id="solveExplainCloseBtn" class="btnGhost">✕ 닫기</button>
     </div>
     <div id="solveExplainBody" class="markdownBody solveExplainBody"></div>

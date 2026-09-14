@@ -703,8 +703,12 @@ textarea { resize: vertical; }
   font-size: 16px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
 }
 .solveIconBtn:hover { background: #323749; }
-.solveTopMeta { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 6px; }
-.solveMetaCode { font-family: 'Courier New', monospace; font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* "ℹ️ 문제 정보" 패널 — 코드/과목/시험명 등을 상단바 바로 아래 작게 보여주고,
+   옆에 라이브러리 뷰어를 새 탭으로 여는 바로가기(🔗)를 둔다. */
+.solveInfoRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.solveInfoText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.solveInfoTitle { font-size: 13px; font-weight: 700; overflow-wrap: break-word; }
+.solveInfoSub { font-family: 'Courier New', monospace; font-size: 12px; color: #9aa0b4; overflow-wrap: break-word; }
 .solveTimer {
   flex-shrink: 0; font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700;
   color: #c7cbe0; background: #262a38; border-radius: 8px; padding: 7px 8px; white-space: nowrap;
@@ -1106,8 +1110,6 @@ textarea { resize: vertical; }
 /* 문제풀이 모드 — "📖 해설" 큰 팝업(#solveExplainModal) */
 .solveExplainBox { max-width: 760px; }
 .solveExplainHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.solveExplainHeadCol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.solveExplainMeta { font-size: 11px; font-weight: 600; color: var(--muted); }
 .solveExplainHead h2 { margin: 0; font-size: 17px; }
 .solveExplainBody { padding: 4px 2px; }
 .solveExplainGenWrap { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
