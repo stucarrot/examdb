@@ -574,7 +574,13 @@ const SolveUI = (() => {
     if (!btn || btn.disabled) return;
     const q = questions[session.index];
     if (session.submitted) return;
-    session.userAnswers[q.id] = btn.dataset.value;
+    // 이미 골라둔 선지를 다시 누르면 선택을 해제한다(정답 확인 전까지만 — 확인 후엔
+    // showResolved로 버튼이 disabled돼 있어 여기까지 오지 않는다).
+    if (session.userAnswers[q.id] === btn.dataset.value) {
+      delete session.userAnswers[q.id];
+    } else {
+      session.userAnswers[q.id] = btn.dataset.value;
+    }
     delete session.checkResults[q.id]; // 답을 바꿨으니 이전 "정답 확인" 결과는 더 이상 유효하지 않음 — 다시 확인 전까진 중립(답변함) 색으로
     persistSession();
     render();
