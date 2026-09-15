@@ -433,14 +433,15 @@ textarea { resize: vertical; }
 
 /* ---------- 문제 마크(이모지 프리셋) — 태그와 별개, 문제 구석에 작게 표시 ----------
  * .markBadge는 항상 "표시 전용"(pointer-events:none)이라 카드/행/뷰어를 클릭하는 동작을
- * 가로채지 않는다. 실제로 값을 바꾸는 곳은 상세 편집 사이드바의 .markPickBtn 버튼뿐. */
+ * 가로채지 않는다. 실제로 값을 바꾸는 곳은 상세 편집 사이드바의 .markPickBtn 버튼뿐.
+ * 배경은 투명하게 두고(이미지/텍스트를 뒤덮지 않도록) 진짜 모서리 끝에 작게 붙이며,
+ * 배경이 없어도 무슨 색 바탕이든 눈에 띄도록 옅은 그림자만 살짝 준다. */
 .markBadge {
-  position: absolute; font-size: 13px; line-height: 1; padding: 3px 5px;
-  background: rgba(255,255,255,.95); border: 1px solid var(--border); border-radius: 6px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.25); pointer-events: none; z-index: 6; user-select: none;
+  position: absolute; top: 1px; right: 2px; font-size: 12px; line-height: 1;
+  background: transparent; pointer-events: none; z-index: 6; user-select: none;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
 }
-.markBadge-tr { top: 5px; right: 5px; }
-.markBadge-viewer { top: 12px; right: 12px; font-size: 18px; padding: 5px 8px; }
+.markBadge-viewer { font-size: 15px; }
 
 .markPicker { display: flex; gap: 6px; flex-wrap: wrap; }
 .markPickBtn {
