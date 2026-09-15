@@ -19,6 +19,7 @@ const Marks = (() => {
     { id: 'question', emoji: '❓', label: '질문 있음' },
     { id: 'review', emoji: '🔁', label: '다시보기' },
     { id: 'caution', emoji: '⚠️', label: '주의' },
+    { id: 'important', emoji: '🚩', label: '중요' }
   ];
 
   function byId(id) {
