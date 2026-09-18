@@ -101,6 +101,7 @@ const SolveUI = (() => {
     el('#solveViewModeImageBtn').addEventListener('click', () => onViewModeBtnClick('image'));
     el('#solveViewModeTextBtn').addEventListener('click', () => onViewModeBtnClick('text'));
     el('#solveMarkVisBtn').addEventListener('click', onMarkVisBtnClick);
+    Drawing.init(el('.solveViewerWrap'), el('#solveDrawBtn'));
 
     // ---- 드로어(문제 목록) ----
     el('#solveListBtn').addEventListener('click', openDrawer);
@@ -492,6 +493,13 @@ const SolveUI = (() => {
       imgArea.classList.toggle('layout-row', q.partsLayout === 'row');
       if (savedImageScrollTop) imgArea.scrollTop = savedImageScrollTop;
     }
+
+    // 그리기 오버레이 — 지금 실제로 보이는 스크롤 컨테이너(이미지 영역 또는 텍스트
+    // 읽기 영역)를 매번 새로 알려준다(둘 다 render()마다 innerHTML이 새로 그려지므로
+    // DOM 참조가 매번 바뀔 수 있음). 이미지/텍스트(마크다운) 모드 어느 쪽이든 같은
+    // 방식으로 동작해서, 보기 방식을 바꿔도 그리기를 바로 이어서 쓸 수 있다.
+    const drawContentEl = showText ? el('#solveTextArea .tvReadingArea') : el('#solveImageArea');
+    Drawing.setContext(drawContentEl, showText ? 'text' : 'image', q, (qq) => DB.updateQuestion(qq));
 
     updateMarkBadge();
     renderChoices();

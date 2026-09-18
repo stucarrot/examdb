@@ -704,6 +704,7 @@ textarea { resize: vertical; }
   font-size: 16px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
 }
 .solveIconBtn:hover { background: #323749; }
+.solveIconBtn.active { background: var(--accent); color: #fff; }
 /* "ℹ️ 문제 정보" 패널 — 코드/과목/시험명 등을 상단바 바로 아래 작게 보여주고,
    옆에 라이브러리 뷰어를 새 탭으로 여는 바로가기(🔗)를 둔다. */
 .solveInfoRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -724,6 +725,54 @@ textarea { resize: vertical; }
    본문(이미지/텍스트) 스크롤 자체는 그대로 각 영역이 담당하도록 분리한다. */
 .solveViewerWrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .solveViewerWrap .markBadge-viewer.hidden { display: none; }
+
+/* ---------- 문제풀이 — 그리기(필기) 오버레이 (js/drawing.js) ----------
+   캔버스(.drawCanvas)는 지금 보이는 스크롤 컨테이너(#solveImageArea 또는
+   #solveTextArea 안의 .tvReadingArea) 안으로 매번 옮겨 붙는다 — 그래야 그 컨테이너와
+   함께 스크롤된다. 그리기가 꺼져 있을 때도(pointer-events:none) 이미 그린 필기는
+   그대로 보이게 둔다(보기는 항상 가능, 수정만 켰을 때만 가능). */
+.drawCanvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3; }
+.drawCanvas-active { cursor: crosshair; }
+
+/* 우측 반투명 미니 툴바 — 화면 스크롤 컨테이너가 아니라 .solveViewerWrap 자체에 고정되어
+   있어 안쪽 컨텐츠가 스크롤돼도 늘 같은 자리(우측 중앙)에 떠 있다. */
+.drawToolbar {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%); z-index: 6;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 8px 6px; border-radius: 14px;
+  background: rgba(20, 22, 31, .55); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,.12); box-shadow: 0 4px 16px rgba(0,0,0,.35);
+}
+.drawToolbar.hidden { display: none; }
+.drawTSep { width: 20px; height: 1px; background: rgba(255,255,255,.15); margin: 2px 0; }
+.drawTBtn {
+  width: 32px; height: 32px; border-radius: 9px; border: none; background: rgba(255,255,255,.08);
+  color: #eef0f8; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; line-height: 1;
+}
+.drawTBtn:hover { background: rgba(255,255,255,.18); }
+.drawTBtn.active { background: var(--accent); }
+.drawThicknessWrap {
+  width: 32px; height: 64px; display: flex; align-items: center; justify-content: center;
+  position: relative; flex-shrink: 0;
+}
+.drawThicknessRange {
+  width: 60px; height: 18px; transform: rotate(-90deg); margin: 0; accent-color: var(--accent);
+}
+.drawThicknessDot {
+  position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+  border-radius: 50%; background: #eef0f8; pointer-events: none; border: 1px solid rgba(0,0,0,.3);
+}
+.drawColorGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; flex-shrink: 0; }
+.drawColorSwatch {
+  width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25);
+  cursor: pointer; padding: 0;
+}
+.drawColorSwatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.drawColorCustom {
+  width: 26px; height: 26px; padding: 0; border: none; border-radius: 8px; background: transparent;
+  cursor: pointer; flex-shrink: 0;
+}
 
 .solveImageArea {
   flex: 1 1 auto; min-height: 0; overflow: auto; background: #0e0f16;
