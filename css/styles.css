@@ -688,37 +688,126 @@ textarea { resize: vertical; }
 
 /* ---------- 문제풀이(Solve) — 풀스크린 모바일 풀이 뷰어 ---------- */
 .overlay.solveOverlay { padding: 0; align-items: stretch; justify-content: stretch; background: #14161f; }
+
+/* "일반테마" — 문제 자체의 색(.tvTheme-*, 문제테마)과는 별개로, 문풀 화면 전체(상/하단바,
+   패널, 선택지 줄, 드로어, 결과 화면)의 색조합을 바꾸는 테마. 변수만 바꿔서 아래 모든 규칙이
+   따라가게 해뒀다 — 기본값(미드나이트)은 예전 하드코딩 값 그대로이고, .solveBox.gtheme-*
+   클래스(js/solve.js의 GENERAL_THEMES)가 이 변수만 덮어써서 나머지는 그대로 재사용된다.
+   정답/오답 같은 의미색(초록/빨강)은 테마와 무관하게 항상 고정 — 이건 "예쁜 색조합"이 아니라
+   맞았다/틀렸다를 나타내는 신호라 테마마다 바뀌면 오히려 혼란스러움. */
 .solveBox {
-  position: relative; width: 100vw; height: 100vh; background: #14161f; color: #eef0f8;
+  --sv-bg: #14161f; --sv-fg: #eef0f8; --sv-bar: #1c1f2b; --sv-border: #2c3040;
+  --sv-btn: #262a38; --sv-btn-hover: #323749; --sv-choice: #232637; --sv-choice-border: #343953;
+  --sv-muted: #c7cbe0; --sv-muted-soft: #9aa0b4; --sv-accent: var(--accent);
+  position: relative; width: 100vw; height: 100vh; background: var(--sv-bg); color: var(--sv-fg);
   display: flex; flex-direction: column; overflow: hidden;
 }
+/* 슬레이트 — 청록빛이 도는 차콜, 틸 계열 강조색 */
+.solveBox.gtheme-slate {
+  --sv-bg: #161b1f; --sv-bar: #1b2227; --sv-border: #29323a; --sv-btn: #232b31; --sv-btn-hover: #2d3740;
+  --sv-choice: #202830; --sv-choice-border: #2f3941; --sv-muted: #c7d5da; --sv-muted-soft: #9fb0b6; --sv-accent: #2bb3a3;
+}
+/* 플럼 — 짙은 자주빛, 오키드 강조색 */
+.solveBox.gtheme-plum {
+  --sv-bg: #1a1620; --sv-bar: #211a2b; --sv-border: #322a3f; --sv-btn: #2a2236; --sv-btn-hover: #362c46;
+  --sv-choice: #251f30; --sv-choice-border: #3a2f4a; --sv-muted: #d6cbe6; --sv-muted-soft: #b3a4c8; --sv-accent: #b06ad1;
+}
+/* 포레스트 — 짙은 초록, 민트 강조색 */
+.solveBox.gtheme-forest {
+  --sv-bg: #131d18; --sv-bar: #17251f; --sv-border: #223a2f; --sv-btn: #1c2f27; --sv-btn-hover: #253c32;
+  --sv-choice: #1a2b23; --sv-choice-border: #274539; --sv-muted: #c3d8cb; --sv-muted-soft: #9db6a7; --sv-accent: #3fbf80;
+}
+/* 앰버 — 짙은 갈색, 호박빛 강조색 */
+.solveBox.gtheme-amber {
+  --sv-bg: #1e1913; --sv-bar: #251f16; --sv-border: #3a2f1f; --sv-btn: #2c251a; --sv-btn-hover: #392f21;
+  --sv-choice: #291f16; --sv-choice-border: #402f1e; --sv-muted: #e0d3ba; --sv-muted-soft: #bfae8d; --sv-accent: #d99a3b;
+}
+/* 로즈우드 — 짙은 와인빛, 로즈 강조색 */
+.solveBox.gtheme-rosewood {
+  --sv-bg: #1f1416; --sv-bar: #271a1d; --sv-border: #3a2429; --sv-btn: #2c1c20; --sv-btn-hover: #3a2529;
+  --sv-choice: #29191c; --sv-choice-border: #3d2429; --sv-muted: #e3c6cb; --sv-muted-soft: #c39ba1; --sv-accent: #e0637b;
+}
+/* E-잉크 — 진짜 전자잉크 리더처럼 흑백만 쓰고, 정답/오답/선택 같은 강조도 배경을 칠하는
+   대신 굵은 선(테두리·밑줄·취소선)만으로 구분한다. 아래 변수만으로는 이미 필요한 "채우기"
+   기반 규칙(선택지/드로어 정답·오답, 진행바 등)까지 다 없앨 수 없어서, 그 요소들은 따로
+   하나씩 outline 방식으로 덮어썼다 — 새 일반테마를 늘릴 땐 이 블록처럼 변수만 바꾸면
+   되지만, "무채색+선 위주"를 요구하는 테마를 또 추가한다면 이 아래 override들도 같이
+   복사해서 맞춰줘야 한다. */
+.solveBox.gtheme-eink {
+  --sv-bg: #ffffff; --sv-bar: #ffffff; --sv-border: #000000; --sv-btn: #ffffff; --sv-btn-hover: #ececec;
+  --sv-choice: #ffffff; --sv-choice-border: #000000; --sv-muted: #000000; --sv-muted-soft: #3a3a3a; --sv-fg: #000000; --sv-accent: #000000;
+}
+.solveBox.gtheme-eink .solveTopBar,
+.solveBox.gtheme-eink .solveViewSettingsPanel,
+.solveBox.gtheme-eink .solveBottomBar,
+.solveBox.gtheme-eink .solveAnswerPanel,
+.solveBox.gtheme-eink .solveChoiceRow,
+.solveBox.gtheme-eink .solveDrawer,
+.solveBox.gtheme-eink .solveResultHead,
+.solveBox.gtheme-eink .solveResultActions { border-color: #000; }
+.solveBox.gtheme-eink .solveIconBtn { border: 1px solid #000; }
+.solveBox.gtheme-eink .solveIconBtn.active { background: #fff; color: #000; box-shadow: inset 0 0 0 2px #000; }
+.solveBox.gtheme-eink .solveNavBtn { border: 1px solid #000; }
+.solveBox.gtheme-eink .tvBtn.active { background: transparent; border: 2px solid #000; color: #000; text-decoration: underline; font-weight: 700; }
+.solveBox.gtheme-eink .solveChoiceBtn.selected { background: #fff; color: #000; border: 2px solid #000; }
+.solveBox.gtheme-eink .solveChoiceBtn.correctChoice { background: #fff; color: #000; border: 2px solid #000; font-weight: 800; }
+.solveBox.gtheme-eink .solveChoiceBtn.wrongChoice { background: #fff; color: #000; border: 2px dashed #000; text-decoration: line-through; }
+.solveBox.gtheme-eink .solveAnswerLine.ans-correct { color: #000; font-weight: 800; }
+.solveBox.gtheme-eink .solveAnswerLine.ans-wrong { color: #000; text-decoration: underline; }
+.solveBox.gtheme-eink .solveDrawerBtn.answered { background: #fff; color: #000; border: 2px solid #000; text-shadow: none; }
+.solveBox.gtheme-eink .solveDrawerBtn.correct { background: #fff; color: #000; border: 2px solid #000; text-shadow: none; font-weight: 800; }
+.solveBox.gtheme-eink .solveDrawerBtn.wrong { background: #fff; color: #000; border: 2px dashed #000; text-shadow: none; text-decoration: line-through; }
+.solveBox.gtheme-eink .solveDrawerBtn.current { outline-color: #000; }
+.solveBox.gtheme-eink .solveProgressBarFill,
+.solveBox.gtheme-eink .solveSubjectBarFill { background: #000; }
+.solveBox.gtheme-eink .solveScoreCircle { background: #fff; border-color: #000; }
+.solveBox.gtheme-eink .solveResultRow.res-correct { background: #fff; border: 1px solid #000; font-weight: 700; }
+.solveBox.gtheme-eink .solveResultRow.res-wrong { background: #fff; border: 1px dashed #000; text-decoration: line-through; }
+.solveBox.gtheme-eink .solveResultRow.res-nograde { background: #fff; border: 1px solid #999; }
+.solveBox.gtheme-eink .btnPrimary,
+.solveBox.gtheme-eink .btnSecondary,
+.solveBox.gtheme-eink .btnGhost { background: #fff; color: #000; border: 2px solid #000; }
+/* 미니멀 아이콘 — 컬러 이모지가 강제로 색을 유지하는 경우까지 대비해 흑백으로 한 번 더
+   눌러준다(글씨/배경은 이미 위에서 흑백으로 바뀌어 있어 실질적으로 대부분 무해한 보정).
+   실제 펜 색상 선택 팔레트(.drawColorSwatch)는 그리기 기능 자체라 예외로 남긴다. */
+.solveBox.gtheme-eink .solveIconBtn,
+.solveBox.gtheme-eink .solveNavBtn,
+.solveBox.gtheme-eink .drawTBtn,
+.solveBox.gtheme-eink .solveDrawerBtn,
+.solveBox.gtheme-eink .tvBtn { filter: grayscale(1) contrast(1.3); }
+.solveBox.gtheme-eink .drawToolbar { background: rgba(255,255,255,.88); border-color: #000; }
+.solveBox.gtheme-eink .drawTBtn { background: rgba(0,0,0,.06); color: #000; }
+.solveBox.gtheme-eink .drawTBtn:hover { background: rgba(0,0,0,.14); }
+.solveBox.gtheme-eink .drawTBtn.active { background: #000; color: #fff; }
+.solveBox.gtheme-eink .drawTSep { background: rgba(0,0,0,.3); }
+.solveBox.gtheme-eink .drawThicknessDot { border-color: rgba(0,0,0,.4); }
+.solveBox.gtheme-eink .drawToolbar.minimized { background: rgba(255,255,255,.55); }
 
 .solvePlay { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 
 .solveTopBar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-  background: #1c1f2b; border-bottom: 1px solid #2c3040;
+  background: var(--sv-bar); border-bottom: 1px solid var(--sv-border);
 }
 .solveIconBtn {
-  border: none; background: #262a38; color: #eef0f8; width: 36px; height: 36px; border-radius: 8px;
+  border: none; background: var(--sv-btn); color: var(--sv-fg); width: 36px; height: 36px; border-radius: 8px;
   font-size: 16px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
 }
-.solveIconBtn:hover { background: #323749; }
-.solveIconBtn.active { background: var(--accent); color: #fff; }
+.solveIconBtn:hover { background: var(--sv-btn-hover); }
+.solveIconBtn.active { background: var(--sv-accent); color: #fff; }
 /* "ℹ️ 문제 정보" 패널 — 코드/과목/시험명 등을 상단바 바로 아래 작게 보여주고,
    옆에 라이브러리 뷰어를 새 탭으로 여는 바로가기(🔗)를 둔다. */
 .solveInfoRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .solveInfoText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .solveInfoTitle { font-size: 13px; font-weight: 700; overflow-wrap: break-word; }
-.solveInfoSub { font-family: 'Courier New', monospace; font-size: 12px; color: #9aa0b4; overflow-wrap: break-word; }
+.solveInfoSub { font-family: 'Courier New', monospace; font-size: 12px; color: var(--sv-muted-soft); overflow-wrap: break-word; }
 .solveTimer {
   flex-shrink: 0; font-family: 'Courier New', monospace; font-size: 12px; font-weight: 700;
-  color: #c7cbe0; background: #262a38; border-radius: 8px; padding: 7px 8px; white-space: nowrap;
+  color: var(--sv-muted); background: var(--sv-btn); border-radius: 8px; padding: 7px 8px; white-space: nowrap;
   cursor: pointer; border: 1px solid transparent; user-select: none;
 }
-.solveTimer:hover { background: #323749; border-color: rgba(255,255,255,.15); }
+.solveTimer:hover { background: var(--sv-btn-hover); border-color: rgba(255,255,255,.15); }
 .solveTimer:active { opacity: .8; }
-.solveGradeBtn { flex-shrink: 0; padding: 8px 14px; font-size: 13px; }
 
 /* 이미지/텍스트 두 영역을 감싸는 위치 기준 컨테이너 — 마크 배지(#solveMarkBadge)를 이
    래퍼의 자식(형제)으로 절대배치해서, 안쪽 영역이 스크롤돼도 배지는 구석에 고정되고
@@ -729,21 +818,37 @@ textarea { resize: vertical; }
 /* ---------- 문제풀이 — 그리기(필기) 오버레이 (js/drawing.js) ----------
    캔버스(.drawCanvas)는 지금 보이는 스크롤 컨테이너(#solveImageArea 또는
    #solveTextArea 안의 .tvReadingArea) 안으로 매번 옮겨 붙는다 — 그래야 그 컨테이너와
-   함께 스크롤된다. 그리기가 꺼져 있을 때도(pointer-events:none) 이미 그린 필기는
-   그대로 보이게 둔다(보기는 항상 가능, 수정만 켰을 때만 가능). */
+   함께 스크롤된다. 그리기 모드를 끄면(.hidden) 필기 자체도 화면에서 사라지고, 다시 켜야만
+   보인다(js/drawing.js의 setEnabled() 참고 — 이전엔 꺼도 항상 보이게 했었는데 요청에 따라
+   변경). */
 .drawCanvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3; }
+.drawCanvas.hidden { display: none; }
 .drawCanvas-active { cursor: crosshair; }
 
 /* 우측 반투명 미니 툴바 — 화면 스크롤 컨테이너가 아니라 .solveViewerWrap 자체에 고정되어
-   있어 안쪽 컨텐츠가 스크롤돼도 늘 같은 자리(우측 중앙)에 떠 있다. */
+   있어 안쪽 컨텐츠가 스크롤돼도 늘 같은 자리(우측 중앙)에 떠 있다. 우측 여백 없이 화면
+   가장자리에 딱 붙여두고(오른쪽 모서리는 각지게), 왼쪽만 둥글린다. */
 .drawToolbar {
-  position: absolute; top: 50%; right: 8px; transform: translateY(-50%); z-index: 6;
+  position: absolute; top: 50%; right: 0; transform: translateY(-50%); z-index: 6;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 8px 6px; border-radius: 14px;
+  padding: 8px 6px; border-radius: 14px 0 0 14px;
   background: rgba(20, 22, 31, .55); backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,.12); box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.12); border-right: none; box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  transition: padding .15s ease, gap .15s ease, background .15s ease;
 }
 .drawToolbar.hidden { display: none; }
+/* 최소화 상태 — "⤡"로 접으면 위로 스크롤/원래대로(⤢)/아래로 스크롤 3개만 작게 남고
+   나머지(펜 굵기·색·매직펜·지우개·전체지우기 등, .drawKeepMin 없는 것들)는 다 숨긴다.
+   버튼 폭을 줄이고 버튼 사이 간격은 오히려 넓혀서(오밀조밀하지 않게), 아이콘도 흰색 위주로
+   최소한만, 바/버튼 배경 투명도도 평소보다 더 높여서(즉 더 투명하게) 문제 화면을 최대한
+   덜 가리게 한다. */
+.drawToolbar.minimized {
+  gap: 16px; padding: 10px 3px; background: rgba(20, 22, 31, .22); border-color: rgba(255,255,255,.08);
+  box-shadow: none; backdrop-filter: blur(2px);
+}
+.drawToolbar.minimized > *:not(.drawKeepMin) { display: none; }
+.drawToolbar.minimized .drawTBtn { width: 20px; height: 20px; font-size: 10px; background: rgba(255,255,255,.05); color: #fff; }
+.drawToolbar.minimized .drawTBtn:hover { background: rgba(255,255,255,.16); }
 .drawTSep { width: 20px; height: 1px; background: rgba(255,255,255,.15); margin: 2px 0; }
 .drawTBtn {
   width: 32px; height: 32px; border-radius: 9px; border: none; background: rgba(255,255,255,.08);
@@ -751,13 +856,13 @@ textarea { resize: vertical; }
   flex-shrink: 0; line-height: 1;
 }
 .drawTBtn:hover { background: rgba(255,255,255,.18); }
-.drawTBtn.active { background: var(--accent); }
+.drawTBtn.active { background: var(--sv-accent, var(--accent)); }
 .drawThicknessWrap {
   width: 32px; height: 64px; display: flex; align-items: center; justify-content: center;
   position: relative; flex-shrink: 0;
 }
 .drawThicknessRange {
-  width: 60px; height: 18px; transform: rotate(-90deg); margin: 0; accent-color: var(--accent);
+  width: 60px; height: 18px; transform: rotate(-90deg); margin: 0; accent-color: var(--sv-accent, var(--accent));
 }
 .drawThicknessDot {
   position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
@@ -768,7 +873,7 @@ textarea { resize: vertical; }
   width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25);
   cursor: pointer; padding: 0;
 }
-.drawColorSwatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.drawColorSwatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--sv-accent, var(--accent)); }
 .drawColorCustom {
   width: 26px; height: 26px; padding: 0; border: none; border-radius: 8px; background: transparent;
   cursor: pointer; flex-shrink: 0;
@@ -813,13 +918,16 @@ textarea { resize: vertical; }
 }
 .tvBtn:hover { opacity: 1; }
 .tvBtn.active { background: var(--accent); border-color: var(--accent); color: #fff; opacity: 1; }
+/* 문제풀이 화면 안에서는 "일반테마"의 강조색을 따라가게(라이브러리 쪽 .tvBtn.active는
+   위 규칙대로 항상 기본 --accent 그대로 — 문제풀이만 화면 테마에 맞춰 톤을 맞춘다). */
+.solveBox .tvBtn.active { background: var(--sv-accent); border-color: var(--sv-accent); }
 
 /* ---------- 문제풀이 상단바 "🎨 보기 설정" 패널 — 이미지/텍스트 전환, 마크 표시,
-   글자크기/테마를 한 군데로 모았다. 상단바 버튼으로 열고 닫으며, 지금 이미지 모드든
+   문제 테마/일반 테마를 한 군데로 모았다. 상단바 버튼으로 열고 닫으며, 지금 이미지 모드든
    텍스트 모드든 상관없이 항상 같은 자리(상단바 바로 아래)에서 접근 가능하다. ---------- */
 .solveViewSettingsPanel {
   flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px;
-  padding: 10px 12px; background: #1c1f2b; border-bottom: 1px solid #2c3040;
+  padding: 10px 12px; background: var(--sv-bar); border-bottom: 1px solid var(--sv-border);
 }
 
 .tvReadingArea { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 26px 30px; border-radius: 8px; box-sizing: border-box; }
@@ -839,42 +947,60 @@ textarea { resize: vertical; }
 .tvTheme-dark .detailTextChoiceMarker, .tvTheme-dark .solveTextChoiceMarker { color: #8fa0ff; }
 .tvTheme-sepia { background: #f4ecd8; color: #3b2f1e; }
 .tvTheme-sepia .detailTextChoiceMarker, .tvTheme-sepia .solveTextChoiceMarker { color: #8a5a2b; }
+/* 딤 — 순검정보다 눈이 편한 부드러운 다크그레이 */
+.tvTheme-dim { background: #242731; color: #d7dae6; }
+.tvTheme-dim .detailTextChoiceMarker, .tvTheme-dim .solveTextChoiceMarker { color: #93a4ff; }
+/* 민트 — 연한 초록빛 종이 느낌 */
+.tvTheme-mint { background: #eaf6f0; color: #1f3a30; }
+.tvTheme-mint .detailTextChoiceMarker, .tvTheme-mint .solveTextChoiceMarker { color: #178a5f; }
+/* 라벤더 — 연한 보랏빛 종이 느낌 */
+.tvTheme-lavender { background: #f2eefb; color: #2e2440; }
+.tvTheme-lavender .detailTextChoiceMarker, .tvTheme-lavender .solveTextChoiceMarker { color: #7c4fd1; }
+/* 로즈 — 연한 붉은빛 종이 느낌 */
+.tvTheme-rose { background: #fdecef; color: #3a1f28; }
+.tvTheme-rose .detailTextChoiceMarker, .tvTheme-rose .solveTextChoiceMarker { color: #c94f6d; }
+/* 오션 — 연한 푸른빛 종이 느낌 */
+.tvTheme-ocean { background: #eaf3fb; color: #16324a; }
+.tvTheme-ocean .detailTextChoiceMarker, .tvTheme-ocean .solveTextChoiceMarker { color: #1f6fa8; }
+/* E-잉크 — 실제 전자잉크 리더처럼 흑백만, 색으로 강조하는 대신 굵게+밑줄(선)로만 구분 */
+.tvTheme-eink { background: #ffffff; color: #000000; }
+.tvTheme-eink .detailTextChoiceMarker, .tvTheme-eink .solveTextChoiceMarker { color: #000000; font-weight: 800; text-decoration: underline; }
 
 .solveAnswerPanel {
-  flex: 0 0 auto; padding: 10px 14px; background: #1c1f2b; border-top: 1px solid #2c3040;
+  flex: 0 0 auto; padding: 10px 14px; background: var(--sv-bar); border-top: 1px solid var(--sv-border);
   font-size: 13px; line-height: 1.6; max-height: 30vh; overflow-y: auto;
 }
 .solveAnswerLine { font-weight: 700; margin-bottom: 6px; }
 .solveAnswerLine.ans-correct { color: #4fd68c; }
 .solveAnswerLine.ans-wrong { color: #ff7a72; }
-.solveAnswerExplain { color: #c7cbe0; white-space: pre-wrap; }
+.solveAnswerExplain { color: var(--sv-muted); white-space: pre-wrap; }
 
 .solveChoiceRow {
-  flex: 0 0 auto; display: flex; gap: 6px; padding: 8px 10px; background: #1c1f2b;
+  flex: 0 0 auto; display: flex; gap: 6px; padding: 6px 10px; background: var(--sv-bar);
 }
 .solveChoiceBtn {
-  flex: 1 1 0; padding: 10px 0; font-size: 15px; font-weight: 700; border-radius: 8px;
-  border: 1px solid #343953; background: #232637; color: #eef0f8; cursor: pointer; font-family: inherit;
+  flex: 1 1 0; padding: 8px 0; font-size: 15px; font-weight: 700; border-radius: 8px;
+  border: 1px solid var(--sv-choice-border); background: var(--sv-choice); color: var(--sv-fg); cursor: pointer; font-family: inherit;
 }
-.solveChoiceBtn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.solveChoiceBtn.selected { background: var(--sv-accent); border-color: var(--sv-accent); color: #fff; }
 .solveChoiceBtn.correctChoice { background: #1c8a5a; border-color: #1c8a5a; color: #fff; }
 .solveChoiceBtn.wrongChoice { background: #b3413a; border-color: #b3413a; color: #fff; }
 .solveChoiceBtn:disabled { cursor: default; }
 
 .solveBottomBar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  background: #1c1f2b; border-top: 1px solid #2c3040;
+  background: var(--sv-bar); border-top: 1px solid var(--sv-border);
 }
 .solveNavBtn {
-  flex: 0 0 auto; border: none; background: #262a38; color: #eef0f8; border-radius: 8px;
+  flex: 0 0 auto; border: none; background: var(--sv-btn); color: var(--sv-fg); border-radius: 8px;
   padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
 }
-.solveNavBtn:hover { background: #323749; }
+.solveNavBtn:hover { background: var(--sv-btn-hover); }
 .solveNavBtn:disabled { opacity: .4; cursor: not-allowed; }
 .solveProgressWrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: center; }
-.solveProgressBarBg { width: 100%; height: 5px; border-radius: 3px; background: #2c3040; overflow: hidden; }
-.solveProgressBarFill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .2s; }
-.solveProgressLabel { font-size: 12px; font-weight: 700; color: #c7cbe0; white-space: nowrap; }
+.solveProgressBarBg { width: 100%; height: 5px; border-radius: 3px; background: var(--sv-border); overflow: hidden; }
+.solveProgressBarFill { height: 100%; background: var(--sv-accent); border-radius: 3px; transition: width .2s; }
+.solveProgressLabel { font-size: 12px; font-weight: 700; color: var(--sv-muted); white-space: nowrap; }
 
 /* ---------- 문제풀이 — 스와이프 사이드바(문제 목록 드로어) ---------- */
 .solveDrawerEdgeHint {
@@ -883,61 +1009,61 @@ textarea { resize: vertical; }
 .solveDrawerBackdrop { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 20; }
 .solveDrawer {
   position: absolute; top: 0; bottom: 0; left: 0; width: 78vw; max-width: 340px;
-  background: #1c1f2b; z-index: 21; transform: translateX(-100%); transition: transform .2s ease;
+  background: var(--sv-bar); z-index: 21; transform: translateX(-100%); transition: transform .2s ease;
   display: flex; flex-direction: column; box-shadow: 4px 0 20px rgba(0,0,0,.4);
 }
 .solveDrawer.open { transform: translateX(0); }
 .solveDrawerHead {
   display: flex; align-items: center; justify-content: space-between; padding: 12px 14px;
-  border-bottom: 1px solid #2c3040; font-weight: 700; flex: 0 0 auto;
+  border-bottom: 1px solid var(--sv-border); font-weight: 700; flex: 0 0 auto;
 }
 .solveDrawerGrid {
   flex: 1 1 auto; overflow-y: auto; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 12px;
 }
 .solveDrawerBtn {
-  aspect-ratio: 1; border: 1px solid #343953; background: #232637; color: #eef0f8; border-radius: 8px;
+  aspect-ratio: 1; border: 1px solid var(--sv-choice-border); background: var(--sv-choice); color: var(--sv-fg); border-radius: 8px;
   font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center;
 }
-.solveDrawerBtn.answered { background: var(--accent); border-color: var(--accent); color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+.solveDrawerBtn.answered { background: var(--sv-accent); border-color: var(--sv-accent); color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
 .solveDrawerBtn.current { outline: 2px solid #fff; outline-offset: 1px; }
 /* 정답(초록)/오답(빨강) 배경 위에서 번호가 또렷이 보이도록 텍스트를 순백+그림자로 강조 */
 .solveDrawerBtn.correct { background: #1c8a5a; border-color: #1c8a5a; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
 .solveDrawerBtn.wrong { background: #b3413a; border-color: #b3413a; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
-.solveDrawerFoot { flex: 0 0 auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #2c3040; }
+.solveDrawerFoot { flex: 0 0 auto; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--sv-border); }
 .solveDrawerNewBtn { width: 100%; color: #ff8a82; font-size: 12.5px; }
 
 /* ---------- 문제풀이 — 결과/분석 화면 ---------- */
 .solveResult {
-  flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; background: #14161f; color: #eef0f8;
+  flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; background: var(--sv-bg); color: var(--sv-fg);
 }
 .solveResultHead {
   flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
-  background: #1c1f2b; border-bottom: 1px solid #2c3040;
+  background: var(--sv-bar); border-bottom: 1px solid var(--sv-border);
 }
 .solveResultHead h2 { margin: 0; font-size: 16px; }
 .solveResultBody { flex: 1 1 auto; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .solveScoreCircle {
-  width: 120px; height: 120px; border-radius: 50%; background: #1c1f2b; border: 4px solid var(--accent);
+  width: 120px; height: 120px; border-radius: 50%; background: var(--sv-bar); border: 4px solid var(--sv-accent);
   display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 800;
 }
-.solveScoreLine { font-size: 14px; color: #c7cbe0; text-align: center; }
+.solveScoreLine { font-size: 14px; color: var(--sv-muted); text-align: center; }
 .solveSubjectBreakdown { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 8px; }
 .solveSubjectRow { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .solveSubjectName { flex: 0 0 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.solveSubjectBarBg { flex: 1; height: 8px; border-radius: 4px; background: #2c3040; overflow: hidden; }
+.solveSubjectBarBg { flex: 1; height: 8px; border-radius: 4px; background: var(--sv-border); overflow: hidden; }
 .solveSubjectBarFill { height: 100%; background: var(--ok); border-radius: 4px; }
-.solveSubjectPct { flex: 0 0 44px; text-align: right; color: #c7cbe0; }
+.solveSubjectPct { flex: 0 0 44px; text-align: right; color: var(--sv-muted); }
 .solveResultList { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 6px; }
 .solveResultRow {
   display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; border-radius: 8px;
-  font-size: 12.5px; cursor: pointer; background: #232637;
+  font-size: 12.5px; cursor: pointer; background: var(--sv-choice);
 }
 .solveResultRow.res-correct { background: rgba(28,138,90,.25); }
 .solveResultRow.res-wrong { background: rgba(179,65,58,.28); }
-.solveResultRow.res-nograde { background: #232637; }
+.solveResultRow.res-nograde { background: var(--sv-choice); }
 .solveResultActions {
   flex: 0 0 auto; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: #1c1f2b; border-top: 1px solid #2c3040;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: var(--sv-bar); border-top: 1px solid var(--sv-border);
 }
 
 @media (max-width: 900px) {

@@ -16,6 +16,12 @@ const SolveUI = (() => {
   const TEXT_MODE_KEY = 'solveTextModePref';
   const TIMER_MODE_KEY = 'solveTimerModePref';
   const MARK_HIDE_KEY = 'solveMarkHidePref';
+  // "일반테마" — 문제 자체의 색(TextViewPrefs의 문제테마)과는 별개로, 문풀 화면 전체(상/하단바,
+  // 패널, 선택지 줄, 드로어, 결과 화면)의 색조합을 바꾸는 테마. css/styles.css의
+  // .solveBox.gtheme-* 클래스와 짝을 맞춘다(midnight은 기본값이라 별도 클래스가 없음).
+  const GENERAL_THEME_KEY = 'solveGeneralTheme';
+  const GENERAL_THEMES = ['midnight', 'slate', 'plum', 'forest', 'amber', 'rosewood', 'eink'];
+  let generalTheme = 'midnight';
 
   let allQuestions = [];      // 설정 화면 필터링용 전체 문제 캐시
   let matched = [];           // 현재 필터 조건에 맞는 문제들
@@ -85,9 +91,8 @@ const SolveUI = (() => {
 
     // ---- 풀이 화면 ----
     el('#solveExitBtn').addEventListener('click', onExitClick);
-    el('#solveGradeBtn').addEventListener('click', onGradeBtnClick);
     el('#solvePrevBtn').addEventListener('click', () => goTo(session.index - 1));
-    el('#solveNextBtn').addEventListener('click', () => goTo(session.index + 1));
+    el('#solveNextBtn').addEventListener('click', onNextClick);
     el('#solveRevealBtn').addEventListener('click', onRevealClick);
     el('#solveExplainBtn').addEventListener('click', openExplainModal);
     el('#solveExplainCloseBtn').addEventListener('click', () => el('#solveExplainModal').classList.add('hidden'));
@@ -96,12 +101,19 @@ const SolveUI = (() => {
     el('#solveChoiceRow').addEventListener('click', onChoiceClick);
     el('#solveTimer').addEventListener('click', onTimerToggleClick);
     el('#solveInfoBtn').addEventListener('click', onInfoToggleClick);
-    el('#solveInfoOpenLibBtn').addEventListener('click', openCurrentQuestionInLibraryTab);
+    el('#solveInfoOpenLibBtn').addEventListener('click', () => openCurrentQuestionInLibraryTab());
     el('#solveViewSettingsBtn').addEventListener('click', onViewSettingsToggleClick);
     el('#solveViewModeImageBtn').addEventListener('click', () => onViewModeBtnClick('image'));
     el('#solveViewModeTextBtn').addEventListener('click', () => onViewModeBtnClick('text'));
     el('#solveMarkVisBtn').addEventListener('click', onMarkVisBtnClick);
+    el('#solveDrawHideToggleBtn').addEventListener('click', onDrawHideToggleClick);
+    el('#solveGeneralThemeGroup').addEventListener('click', onGeneralThemeClick);
     Drawing.init(el('.solveViewerWrap'), el('#solveDrawBtn'));
+
+    // ---- 갈무리(제출 전 확인) 화면 — 마지막 문제에서 "다음"을 누르면 뜬다 ----
+    el('#solveWrapupCloseBtn').addEventListener('click', onWrapupCloseClick);
+    el('#solveWrapupGradeBtn').addEventListener('click', onGradeBtnClick);
+    el('#solveWrapupUnansweredList').addEventListener('click', onWrapupListClick);
 
     // ---- 드로어(문제 목록) ----
     el('#solveListBtn').addEventListener('click', openDrawer);
@@ -134,6 +146,9 @@ const SolveUI = (() => {
     if (savedTimerMode === 'cumulative' || savedTimerMode === 'perVisit') timerMode = savedTimerMode;
     marksHidden = !!(await DB.getMeta(MARK_HIDE_KEY));
     updateMarkVisBtn();
+    const savedGeneralTheme = await DB.getMeta(GENERAL_THEME_KEY);
+    if (GENERAL_THEMES.includes(savedGeneralTheme)) generalTheme = savedGeneralTheme;
+    applyGeneralTheme();
 
     const persisted = await DB.getMeta(SESSION_KEY);
     if (persisted && persisted.questionIds && persisted.questionIds.length && !persisted.submitted) {
@@ -278,6 +293,7 @@ const SolveUI = (() => {
     if (!ids.length) { alert('풀 문제가 없습니다. 조건을 확인해주세요.'); return; }
     await createSession(ids, buildFilterLabel());
     await hydrateSessionQuestions();
+    await resetSessionDrawings();
     openOverlay();
   }
 
@@ -288,6 +304,7 @@ const SolveUI = (() => {
     await createSession(list.map((q) => q.id), `선택한 문제 ${list.length}개`);
     questions = list.slice();
     session.questionIds = questions.map((q) => q.id);
+    await resetSessionDrawings();
     await persistSession();
     openOverlay();
   }
@@ -329,12 +346,27 @@ const SolveUI = (() => {
     if (session.index >= questions.length) session.index = Math.max(0, questions.length - 1);
   }
 
+  /** 새 문제풀기 세션을 실제로 시작하는 세 진입점(onStartClick/startWithQuestions/
+   * onRetryWrongClick) 모두에서, questions 배열이 이번 세션의 최종 문제 목록으로 채워진
+   * 뒤 이 함수를 호출한다 — 남아있는 drawing 필드(지난 세션에서 그렸던 필기)가 있는
+   * 문제만 걸러서 지우고 DB에도 반영한다(drawing.js 상단 주석 참고). "이전 세션이 끝나고
+   * 다음 세션이 시작될 때 초기화"이므로, 같은 세션 안에서 나갔다 이어풀기 할 때는 이 함수가
+   * 호출되지 않아 필기가 그대로 남는다. */
+  async function resetSessionDrawings() {
+    const dirty = questions.filter((q) => q.drawing);
+    if (!dirty.length) return;
+    dirty.forEach((q) => { delete q.drawing; });
+    await Promise.all(dirty.map((q) => DB.updateQuestion(q)));
+  }
+
   // ==================== 풀이 뷰어 ====================
 
   function openOverlay() {
     el('#solveOverlay').classList.remove('hidden');
     el('#solveResult').classList.add('hidden');
+    el('#solveWrapup').classList.add('hidden');
     el('#solvePlay').classList.remove('hidden');
+    applyGeneralTheme();
     viewSettingsOpen = false;
     el('#solveViewSettingsPanel').classList.add('hidden');
     infoOpen = false;
@@ -362,6 +394,52 @@ const SolveUI = (() => {
     session.index = idx;
     await persistSession();
     render();
+  }
+
+  /** 하단바 "다음 ▶" — 보통은 그냥 다음 문제로 넘어가지만, 이미 마지막 문제라면 더 넘어갈
+   * 문제가 없으므로 대신 갈무리(제출 전 확인) 화면을 띄운다. 단, 채점을 이미 마친 뒤
+   * 결과를 리뷰하는 중(session.submitted)이라면 굳이 다시 갈무리 화면을 보여줄 필요 없이
+   * 곧장 결과 화면으로 돌아간다(예전 상단바 "결과" 버튼과 같은 동작). */
+  function onNextClick() {
+    if (session.index < questions.length - 1) { goTo(session.index + 1); return; }
+    if (session.submitted) { showResultScreen(); return; }
+    showWrapupScreen();
+  }
+
+  /** 갈무리 화면 — 아직 채점 전, "이 상태로 채점해도 될지" 마지막으로 확인하는 화면.
+   * 결과 화면과 같은 카드 레이아웃(.solveResult 등)을 그대로 재사용하되, 점수 대신
+   * 답변함/전체 문항 수와 미답 문제 목록만 보여준다. 여기 "채점하기"를 눌러야 실제 채점이
+   * 이뤄진다(onGradeBtnClick 재사용 — 하단바에는 더 이상 채점 버튼이 없음). */
+  function showWrapupScreen() {
+    const total = questions.length;
+    const unanswered = questions.map((q, i) => ({ q, i })).filter(({ q }) => !session.userAnswers[q.id]);
+    const answeredCount = total - unanswered.length;
+
+    el('#solvePlay').classList.add('hidden');
+    el('#solveWrapup').classList.remove('hidden');
+
+    el('#solveWrapupAnsweredText').textContent = `${answeredCount}/${total}`;
+    el('#solveWrapupLine').textContent = unanswered.length
+      ? `아직 답을 고르지 않은 문제가 ${unanswered.length}개 있습니다 — 이대로 채점하면 오답으로 처리됩니다. 목록을 눌러 바로 이동할 수 있습니다.`
+      : '모든 문제에 답변했습니다. 채점할 준비가 됐어요.';
+    el('#solveWrapupUnansweredList').innerHTML = unanswered.map(({ q, i }) => `
+      <div class="solveResultRow res-nograde" data-idx="${i}">
+        <span>${i + 1}. ${escapeHtml(q.code || q.examTitle)} ${q.qnum ?? ''}번</span>
+        <span>미답</span>
+      </div>`).join('');
+  }
+
+  function onWrapupCloseClick() {
+    el('#solveWrapup').classList.add('hidden');
+    el('#solvePlay').classList.remove('hidden');
+  }
+
+  function onWrapupListClick(e) {
+    const row = e.target.closest('.solveResultRow');
+    if (!row) return;
+    el('#solveWrapup').classList.add('hidden');
+    el('#solvePlay').classList.remove('hidden');
+    goTo(Number(row.dataset.idx));
   }
 
   /** 지금 보고 있던 문제의 방금 구간(timerStartTs~지금)을 session.timeSpent에 누적하고
@@ -411,6 +489,25 @@ const SolveUI = (() => {
     btn.textContent = marksHidden ? '🚫 숨김' : '🏷️ 표시';
     btn.classList.toggle('active', !marksHidden);
     btn.title = marksHidden ? '문제 마크 숨김 (클릭하면 표시)' : '문제 마크 표시 중 (클릭하면 숨김)';
+  }
+
+  /** 보기 설정 패널의 "그리기 꺼짐 시 필기" 토글 — 그리기 모드를 꺼도 이미 그린 필기를
+   * 계속 보여줄지, 아니면 그리기 모드에 들어갔을 때만 보이게 숨길지 선택한다(선호값은
+   * js/drawing.js의 PREFS_KEY에 함께 저장되어 다음 진입 때도 이어서 유지된다). */
+  function onDrawHideToggleClick() {
+    Drawing.setHideWhenOff(!Drawing.getHideWhenOff());
+    updateDrawHideToggleBtn();
+  }
+
+  function updateDrawHideToggleBtn() {
+    const btn = el('#solveDrawHideToggleBtn');
+    if (!btn) return;
+    const hide = Drawing.getHideWhenOff();
+    btn.textContent = hide ? '🚫 숨김' : '👁 계속 표시';
+    btn.classList.toggle('active', !hide);
+    btn.title = hide
+      ? '그리기를 끄면 필기도 함께 숨겨짐 (클릭하면 꺼도 계속 표시로 전환)'
+      : '그리기를 꺼도 필기는 계속 표시됨 (클릭하면 꺼지면 숨김으로 전환)';
   }
 
   /** 뷰어 구석의 마크 배지(#solveMarkBadge)를 지금 문제(questions[session.index])와
@@ -507,7 +604,6 @@ const SolveUI = (() => {
     updateBottomBar();
     updateDrawerHighlight();
     updateExplainBtnState();
-    el('#solveGradeBtn').textContent = session.submitted ? '결과' : '채점';
   }
 
   /** "📖 해설" 버튼은 이 문제의 정답을 확인(정답보기 또는 채점)하기 전까지는 비활성 —
@@ -546,9 +642,12 @@ const SolveUI = (() => {
    * 함께 다시 열면, main.js의 초기화 로직이 그 쿼리를 보고 라이브러리 탭 + 상세 뷰어를 자동으로
    * 열어준다 — index.html/js/main.js 참고). 같은 IndexedDB를 그대로 보고 쓰므로 새 탭에서
    * 해설을 저장하면, 이 문제풀이 탭으로 돌아와도(다음에 다시 열 때) 그대로 반영된다.
-   * AI 해설 생성 버튼/로직은 건드리지 않고 완전히 별개로 동작한다. */
+   * AI 해설 생성 버튼/로직은 건드리지 않고 완전히 별개로 동작한다.
+   * 문제 뷰어만 딱 띄우고 끝나면 해설칸을 또 찾아 들어가야 해서, &focus=explanation을
+   * 붙여 새 탭이 곧바로 "문제정보" 패널을 펴고 해설 입력칸 끝에 커서를 두게 한다
+   * (main.js openDeepLinkIfAny → library.js LibraryUI.focusExplanationField). */
   function onManualExplainClick() {
-    openCurrentQuestionInLibraryTab();
+    openCurrentQuestionInLibraryTab('&focus=explanation');
   }
 
   async function onSolveExplainGenerate() {
@@ -609,6 +708,8 @@ const SolveUI = (() => {
     el('#solveViewModeTextBtn').classList.toggle('active', textMode && q.hasTextChoices);
 
     updateMarkVisBtn();
+    updateDrawHideToggleBtn();
+    updateGeneralThemeButtons();
 
     const host = el('#solveTvControlsHost');
     host.innerHTML = TextViewPrefs.controlsHtml();
@@ -643,11 +744,13 @@ const SolveUI = (() => {
 
   /** 지금 보고 있는 문제의 라이브러리 상세 뷰어를 새 브라우저 탭으로 연다. 해설 팝업의
    * "📝 직접입력"과 문제정보 패널의 🔗 버튼이 이 함수 하나를 공유해서 쓴다(둘 다 목적은
-   * 같음 — 지금 풀이 중인 탭은 그대로 두고 라이브러리 뷰어만 별도 탭으로). */
-  function openCurrentQuestionInLibraryTab() {
+   * 같음 — 지금 풀이 중인 탭은 그대로 두고 라이브러리 뷰어만 별도 탭으로).
+   * @param extraQuery 추가로 붙일 쿼리스트링(예: '&focus=explanation' — main.js의
+   *   openDeepLinkIfAny가 이 값을 보고 해설 입력칸에 자동으로 포커스를 준다). */
+  function openCurrentQuestionInLibraryTab(extraQuery) {
     const q = questions[session.index];
     if (!q) return;
-    const url = `${location.pathname}?qid=${encodeURIComponent(q.id)}`;
+    const url = `${location.pathname}?qid=${encodeURIComponent(q.id)}${extraQuery || ''}`;
     window.open(url, '_blank');
   }
 
@@ -661,6 +764,30 @@ const SolveUI = (() => {
     if (!viewSettingsOpen) return;
     viewSettingsOpen = false;
     el('#solveViewSettingsPanel').classList.add('hidden');
+  }
+
+  /** .solveBox에 지금 선택된 일반테마 클래스를 입힌다(css/styles.css의 .solveBox.gtheme-*
+   * 참고). midnight은 기본값이라 별도 클래스 없이 .solveBox 자체의 기본 변수값으로 표현된다.
+   * 탭 진입 시(onShow)와 풀이 화면을 열 때(openOverlay) 모두 호출해 항상 최신 선택값이
+   * 반영되게 한다(여러 번 호출해도 안전 — 클래스를 다 지우고 다시 계산). */
+  function applyGeneralTheme() {
+    const box = el('.solveBox');
+    if (!box) return;
+    GENERAL_THEMES.forEach((t) => box.classList.remove('gtheme-' + t));
+    if (generalTheme !== 'midnight') box.classList.add('gtheme-' + generalTheme);
+  }
+
+  function onGeneralThemeClick(e) {
+    const btn = e.target.closest('[data-gtheme]');
+    if (!btn || !GENERAL_THEMES.includes(btn.dataset.gtheme)) return;
+    generalTheme = btn.dataset.gtheme;
+    DB.setMeta(GENERAL_THEME_KEY, generalTheme);
+    applyGeneralTheme();
+    updateGeneralThemeButtons();
+  }
+
+  function updateGeneralThemeButtons() {
+    elAll('[data-gtheme]').forEach((b) => b.classList.toggle('active', b.dataset.gtheme === generalTheme));
   }
 
   function onViewModeBtnClick(mode) {
@@ -752,7 +879,9 @@ const SolveUI = (() => {
   function updateBottomBar() {
     const total = questions.length;
     el('#solvePrevBtn').disabled = session.index === 0;
-    el('#solveNextBtn').disabled = session.index === total - 1;
+    // "다음"은 이제 마지막 문제에서도 비활성화하지 않는다 — 거기서 누르면 다음 문제로
+    // 넘어가는 대신 갈무리(제출 전 확인)/결과 화면으로 넘어간다(onNextClick 참고).
+    el('#solveNextBtn').disabled = false;
     el('#solveProgressLabel').textContent = `${session.index + 1} / ${total}`;
     el('#solveProgressBarFill').style.width = `${((session.index + 1) / total) * 100}%`;
   }
@@ -792,6 +921,10 @@ const SolveUI = (() => {
     drawerOpen = true;
     el('#solveDrawer').classList.add('open');
     el('#solveDrawerBackdrop').classList.remove('hidden');
+    // 맨 위부터가 아니라 지금 풀고 있는 문제(.current, updateDrawerHighlight가 매 render()마다
+    // 표시해둠) 위치로 바로 스크롤해서 보여준다.
+    const current = el('.solveDrawerBtn.current');
+    if (current) current.scrollIntoView({ block: 'center' });
   }
   function closeDrawer() {
     drawerOpen = false;
@@ -837,6 +970,7 @@ const SolveUI = (() => {
     gradable.forEach((q) => { if (session.userAnswers[q.id] === String(q.answer)) correct++; });
 
     el('#solvePlay').classList.add('hidden');
+    el('#solveWrapup').classList.add('hidden');
     el('#solveResult').classList.remove('hidden');
 
     const pct = gradable.length ? Math.round((correct / gradable.length) * 100) : 0;
@@ -903,6 +1037,7 @@ const SolveUI = (() => {
     await createSession(wrong.map((q) => q.id), '틀린 문제만 다시 풀기');
     questions = wrong.slice();
     session.questionIds = questions.map((q) => q.id);
+    await resetSessionDrawings();
     await persistSession();
     openOverlay();
   }

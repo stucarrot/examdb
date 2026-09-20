@@ -788,7 +788,6 @@
         <button id="solveViewSettingsBtn" class="solveIconBtn" title="보기 설정 (이미지·텍스트 / 마크 / 글자·테마)">🎨</button>
         <button id="solveDrawBtn" class="solveIconBtn" title="그리기 켜기 (문제 위에 필기)">✏️</button>
         <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
-        <button id="solveGradeBtn" class="btnPrimary solveGradeBtn">채점</button>
       </div>
 
       <div id="solveInfoPanel" class="solveViewSettingsPanel hidden">
@@ -811,7 +810,21 @@
           <span class="tvControlLabel">문제 마크</span>
           <button type="button" class="tvBtn" id="solveMarkVisBtn"></button>
         </div>
+        <div class="tvControlGroup">
+          <span class="tvControlLabel">그리기 꺼짐 시 필기</span>
+          <button type="button" class="tvBtn" id="solveDrawHideToggleBtn"></button>
+        </div>
         <div id="solveTvControlsHost"></div>
+        <div class="tvControlGroup" id="solveGeneralThemeGroup">
+          <span class="tvControlLabel">일반 테마</span>
+          <button type="button" class="tvBtn" data-gtheme="midnight">미드나이트</button>
+          <button type="button" class="tvBtn" data-gtheme="slate">슬레이트</button>
+          <button type="button" class="tvBtn" data-gtheme="plum">플럼</button>
+          <button type="button" class="tvBtn" data-gtheme="forest">포레스트</button>
+          <button type="button" class="tvBtn" data-gtheme="amber">앰버</button>
+          <button type="button" class="tvBtn" data-gtheme="rosewood">로즈우드</button>
+          <button type="button" class="tvBtn" data-gtheme="eink">E-잉크</button>
+        </div>
       </div>
 
       <div class="solveViewerWrap">
@@ -833,6 +846,25 @@
         <button id="solveRevealBtn" class="solveNavBtn">정답보기</button>
         <button id="solveExplainBtn" class="solveNavBtn" disabled title="정답을 확인하면 이용할 수 있습니다">📖 해설</button>
         <button id="solveNextBtn" class="solveNavBtn">다음 ▶</button>
+      </div>
+    </div>
+
+    <!-- ---- 마지막 문제에서 "다음"을 누르면 뜨는 갈무리(제출 전 확인) 화면 ----
+         결과 화면과 같은 카드 레이아웃(.solveResult 등)을 그대로 재사용한다 — 아직 채점 전이라
+         점수 대신 "답변함/전체"와 미답 문제 목록만 보여주고, 여기서 "채점하기"를 눌러야 실제로
+         채점이 이뤄진다(하단바에는 더 이상 채점 버튼이 없음 — solve.js showWrapupScreen 참고). -->
+    <div id="solveWrapup" class="solveResult hidden">
+      <div class="solveResultHead">
+        <h2>제출 전 확인</h2>
+        <button id="solveWrapupCloseBtn" class="solveIconBtn" title="문제로 돌아가기">✕</button>
+      </div>
+      <div class="solveResultBody">
+        <div class="solveScoreCircle"><span id="solveWrapupAnsweredText">0/0</span></div>
+        <p id="solveWrapupLine" class="solveScoreLine"></p>
+        <div id="solveWrapupUnansweredList" class="solveResultList"></div>
+      </div>
+      <div class="solveResultActions">
+        <button id="solveWrapupGradeBtn" class="btnPrimary">채점하기</button>
       </div>
     </div>
 

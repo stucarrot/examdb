@@ -11,8 +11,11 @@ const TextViewPrefs = (() => {
   const KEY = 'textViewPrefs';
   const FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
   const FONT_LABELS = { sm: '작게', md: '보통', lg: '크게', xl: '아주 크게' };
-  const THEMES = ['light', 'dark', 'sepia'];
-  const THEME_LABELS = { light: '라이트', dark: '다크', sepia: '세피아' };
+  const THEMES = ['light', 'dark', 'sepia', 'dim', 'mint', 'lavender', 'rose', 'ocean', 'eink'];
+  const THEME_LABELS = {
+    light: '라이트', dark: '다크', sepia: '세피아',
+    dim: '딤', mint: '민트', lavender: '라벤더', rose: '로즈', ocean: '오션', eink: 'E-잉크',
+  };
 
   let prefs = { fontSize: 'md', theme: 'light' };
   let loaded = false;
@@ -61,7 +64,7 @@ const TextViewPrefs = (() => {
     return `
       <div class="tvControls">
         <div class="tvControlGroup"><span class="tvControlLabel">글자 크기</span>${fontBtns}</div>
-        <div class="tvControlGroup"><span class="tvControlLabel">테마</span>${themeBtns}</div>
+        <div class="tvControlGroup"><span class="tvControlLabel">문제 테마</span>${themeBtns}</div>
       </div>`;
   }
 

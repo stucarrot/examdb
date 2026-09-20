@@ -1633,7 +1633,26 @@ const LibraryUI = (() => {
     renderTagManagerList();
   }
 
-  return { init, refresh, onShow, openDetail };
+  /** "해설 직접입력"으로 문제풀이(solve.js)에서 이 문제의 라이브러리 뷰어를 새 탭으로
+   * 열었을 때(?qid=...&focus=explanation → main.js openDeepLinkIfAny) 호출된다. 모바일
+   * 폭이면 해설 textarea가 "📝 문제정보" 시트 안으로 옮겨가 있으므로(layoutMobileDetailChrome)
+   * 그 시트를 자동으로 펴고, 해설 입력칸에 포커스를 준 뒤 커서를 맨 끝에 둔다 — 곧바로
+   * 이어서 타이핑할 수 있게. 시트가 막 열리는 트랜지션/리플로우 중에 포커스가 씹히지 않도록
+   * 한 프레임 늦춰서 focus/selection을 건다. */
+  function focusExplanationField() {
+    if (isMobileDetailViewer() && mobileSheetOpen !== 'info') { mobileSheetOpen = 'info'; applyMobileSheetState(); }
+    setDetailExplainTab('edit');
+    const ta = el('#detailExplanation');
+    if (!ta) return;
+    requestAnimationFrame(() => {
+      ta.focus();
+      const end = ta.value.length;
+      ta.setSelectionRange(end, end);
+      ta.scrollTop = ta.scrollHeight;
+    });
+  }
+
+  return { init, refresh, onShow, openDetail, focusExplanationField };
 })();
 
 window.LibraryUI = LibraryUI;

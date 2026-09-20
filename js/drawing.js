@@ -12,6 +12,16 @@
  * 저장은 문제 레코드에 직접 얹는다: question.drawing = { image: Stroke[], text: Stroke[] }
  * (DB 스키마 변경 없이 questions 레코드에 필드 하나 추가 — marks.js의 mark 필드와 같은 방식).
  * Stroke = { color, width, points: [{x,y,p}, ...] } (x,y는 0~1 정규화, p는 필압 0~1 또는 없음).
+ *
+ * 필기는 그리기 모드(✏️)가 켜져 있을 때, 그리고 "그리기 꺼짐 시에도 표시" 설정이 꺼져
+ * 있을 때만 그리기 모드 여부에 따라 숨겨진다 — hideWhenOff는 사용자가 보기설정 패널에서
+ * 고를 수 있는 선호값이다(기본값 true, 즉 꺼지면 숨김). setHideWhenOff()/getHideWhenOff()
+ * 참고. 데이터 자체는 지워지지 않으니 표시 설정을 바꿔도 필기는 그대로 유지된다.
+ * 또한 이 필기는 "문제풀기 세션" 하나에 한정된 스크래치로 취급한다 — solve.js가 새
+ * 세션을 시작할 때(createSession 이후 questions 배열이 채워지는 시점) 그 세션에 들어갈
+ * 문제들의 남아있던 drawing 필드를 모두 지운다(resetSessionDrawings 참고). 즉 같은
+ * 세션 안에서 나갔다 이어서 풀면 필기가 그대로 남지만, 그 세션이 끝나고 새 세션을
+ * 시작하면 필기는 초기화된다.
  */
 const Drawing = (() => {
   const PREFS_KEY = 'solveDrawPrefs';
@@ -30,6 +40,8 @@ const Drawing = (() => {
   let saveFn = null;      // async (question) => void — 변경 시 영속화
 
   let enabled = false;    // 상단바 토글 on/off
+  let minimized = false;  // 우측 미니 툴바를 구석으로 축소해둔 상태(그리기는 계속 가능, 버튼만 숨김)
+  let hideWhenOff = true; // 그리기 꺼짐 상태일 때 이미 그린 필기까지 숨길지(true=숨김, false=계속 표시) — 보기설정 패널에서 선택 가능
   let tool = 'pen';       // 'pen' | 'eraser'
   let color = COLORS[0];
   let magic = false;      // 매직펜(픽셀 보색 자동) on/off
@@ -64,13 +76,14 @@ const Drawing = (() => {
         if (typeof p.magic === 'boolean') magic = p.magic;
         if (p.widthPx) widthPx = p.widthPx;
         if (typeof p.pressureOn === 'boolean') pressureOn = p.pressureOn;
+        if (typeof p.hideWhenOff === 'boolean') hideWhenOff = p.hideWhenOff;
       }
     } catch (e) { /* 무시 — 기본값으로 진행 */ }
     syncToolbarState();
   }
 
   function savePrefs() {
-    DB.setMeta(PREFS_KEY, { color, magic, widthPx, pressureOn });
+    DB.setMeta(PREFS_KEY, { color, magic, widthPx, pressureOn, hideWhenOff });
   }
 
   function buildCanvas() {
@@ -88,7 +101,7 @@ const Drawing = (() => {
     toolbarEl = document.createElement('div');
     toolbarEl.className = 'drawToolbar hidden';
     toolbarEl.innerHTML = `
-      <button type="button" class="drawTBtn" data-act="scrollUp" title="위로 스크롤 (그리기 중엔 스와이프 대신 이 버튼으로)">▲</button>
+      <button type="button" class="drawTBtn" data-act="minimize" title="그리기 바 최소화">⤡</button>
       <div class="drawTSep"></div>
       <div class="drawThicknessWrap" title="굵기 조절">
         <input type="range" class="drawThicknessRange" min="1" max="24" step="1" value="${widthPx}">
@@ -105,7 +118,9 @@ const Drawing = (() => {
       <button type="button" class="drawTBtn" data-act="eraser" title="지우개 (선 단위로 지웁니다)">🧽</button>
       <button type="button" class="drawTBtn" data-act="clear" title="이 문제의 필기 모두 지우기">🗑️</button>
       <div class="drawTSep"></div>
-      <button type="button" class="drawTBtn" data-act="scrollDown" title="아래로 스크롤 (그리기 중엔 스와이프 대신 이 버튼으로)">▼</button>
+      <button type="button" class="drawTBtn drawKeepMin" data-act="scrollUp" title="위로 스크롤 (그리기 중엔 스와이프 대신 이 버튼으로)">▲</button>
+      <button type="button" class="drawTBtn drawKeepMin" data-act="restore" title="그리기 바 원래대로">⤢</button>
+      <button type="button" class="drawTBtn drawKeepMin" data-act="scrollDown" title="아래로 스크롤 (그리기 중엔 스와이프 대신 이 버튼으로)">▼</button>
     `;
     wrapEl.appendChild(toolbarEl);
     toolbarEl.addEventListener('click', onToolbarClick);
@@ -135,12 +150,23 @@ const Drawing = (() => {
     const btn = e.target.closest('.drawTBtn');
     if (!btn) return;
     const act = btn.dataset.act;
+    if (act === 'minimize') { setMinimized(true); return; }
+    if (act === 'restore') { setMinimized(false); return; }
     if (act === 'scrollUp') { scrollByPage(-1); return; }
     if (act === 'scrollDown') { scrollByPage(1); return; }
     if (act === 'pressure') { pressureOn = !pressureOn; savePrefs(); syncToolbarState(); return; }
     if (act === 'magic') { magic = !magic; tool = 'pen'; savePrefs(); syncToolbarState(); return; }
     if (act === 'eraser') { tool = tool === 'eraser' ? 'pen' : 'eraser'; syncToolbarState(); return; }
     if (act === 'clear') { onClearClick(); return; }
+  }
+
+  /** 우측 미니 툴바를 문제 영역 우측 하단 구석으로 축소한다(펼침 상태의 모든 버튼을
+   * 숨기고 위로 스크롤/원래대로/아래로 스크롤 3개만 작게 남긴다 — css/styles.css의
+   * .drawToolbar.minimized, .drawKeepMin 참고). 그리기 자체는 축소 중에도 계속 가능
+   * (캔버스 포인터 이벤트는 그대로 유지) — 화면을 가리는 툴바만 잠깐 치워두는 용도. */
+  function setMinimized(v) {
+    minimized = v;
+    toolbarEl.classList.toggle('minimized', minimized);
   }
 
   function scrollByPage(dir) {
@@ -177,15 +203,34 @@ const Drawing = (() => {
 
   function setEnabled(v) {
     enabled = v;
+    if (enabled) setMinimized(false); // 다시 켤 때마다 항상 펼쳐진 상태로 시작(패널 열림/닫힘과 같은 방식)
     toggleBtn.classList.toggle('active', enabled);
     toggleBtn.title = enabled ? '그리기 끄기' : '그리기 켜기 (문제 위에 필기)';
     toolbarEl.classList.toggle('hidden', !enabled);
     canvas.classList.toggle('drawCanvas-active', enabled);
+    updateCanvasVisibility();
     canvas.style.pointerEvents = enabled ? 'auto' : 'none';
     canvas.style.touchAction = enabled ? 'none' : 'auto'; // 켜져 있을 때만 터치 드래그를 스크롤 대신 그리기로 사용
   }
 
+  /** 캔버스를 지금 상태(그리기 on/off, 꺼짐 시 숨김 여부 선호값)에 맞게 보이거나 숨긴다.
+   * hideWhenOff=false면 꺼져 있어도(포인터 이벤트만 비활성화된 채) 필기가 계속 보인다. */
+  function updateCanvasVisibility() {
+    if (!canvas) return;
+    canvas.classList.toggle('hidden', !enabled && hideWhenOff);
+  }
+
   function isEnabled() { return enabled; }
+
+  function getHideWhenOff() { return hideWhenOff; }
+
+  /** 보기설정 패널의 "그리기 꺼짐 시 필기" 토글에서 호출 — 즉시 화면에 반영하고 선호값을
+   * 저장한다(다음에 문제풀이에 들어와도 이어서 적용). */
+  function setHideWhenOff(v) {
+    hideWhenOff = v;
+    savePrefs();
+    updateCanvasVisibility();
+  }
 
   // ==================== 컨텍스트 전환(문제/모드 바뀔 때마다 solve.js가 호출) ====================
 
@@ -208,6 +253,7 @@ const Drawing = (() => {
     strokes = question.drawing[mode];
     if (getComputedStyle(contentEl).position === 'static') contentEl.style.position = 'relative';
     if (canvas.parentElement !== contentEl) contentEl.appendChild(canvas);
+    updateCanvasVisibility();
     resizeCanvasToContent();
     // 이미지가 아직 로딩 중이면(높이를 모름) 로드 완료 후 다시 한번 맞춘다.
     Array.from(contentEl.querySelectorAll('img')).forEach((img) => {
@@ -410,7 +456,7 @@ const Drawing = (() => {
     return [Number(m[0]), Number(m[1]), Number(m[2])];
   }
 
-  return { init, setEnabled, isEnabled, setContext };
+  return { init, setEnabled, isEnabled, setContext, getHideWhenOff, setHideWhenOff };
 })();
 
 window.Drawing = Drawing;

@@ -12,12 +12,16 @@ const App = (() => {
   /** 문제풀이 화면의 "📝 직접입력" 버튼 등에서 새 브라우저 탭으로 `?qid=<문제id>`를 붙여
    * 이 앱을 다시 열었을 때, 그 쿼리스트링을 보고 라이브러리 탭으로 전환한 뒤 해당 문제의
    * 상세 뷰어를 자동으로 열어준다. 쿼리가 없으면(평소처럼 그냥 열었을 때) 아무 영향 없음 —
-   * 기존 "가져오기" 탭으로 시작하는 흐름 그대로 유지. */
+   * 기존 "가져오기" 탭으로 시작하는 흐름 그대로 유지.
+   * &focus=explanation이 함께 붙어있으면(solve.js의 "해설 직접입력" 전용) 문제 뷰어만 딱
+   * 띄우는 데서 그치지 않고, "문제정보" 패널까지 펴서 해설 입력칸 끝에 커서를 놔준다. */
   async function openDeepLinkIfAny() {
-    const qid = new URLSearchParams(location.search).get('qid');
+    const params = new URLSearchParams(location.search);
+    const qid = params.get('qid');
     if (!qid) return false;
     switchTab('library');
     await LibraryUI.openDetail(qid);
+    if (params.get('focus') === 'explanation') LibraryUI.focusExplanationField();
     return true;
   }
 
