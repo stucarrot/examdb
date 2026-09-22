@@ -6,6 +6,9 @@
 const SettingsUI = (() => {
   function el(sel, root = document) { return root.querySelector(sel); }
 
+  let examList = []; // 백업 범위(일부만 선택)용: {id, title, subject, qcount}
+  const selectedExamIds = new Set(); // 일부만 선택 모드에서 체크된 시험지 id
+
   function init() {
     el('#btnBackup').addEventListener('click', onBackup);
     el('#restoreFile').addEventListener('change', onRestoreFileChosen);
@@ -15,9 +18,83 @@ const SettingsUI = (() => {
     el('#btnMemoryReset').addEventListener('click', onMemoryReset);
     el('#aiSettingsSaveBtn').addEventListener('click', onAiSettingsSave);
     el('#aiSettingsTestBtn').addEventListener('click', onAiSettingsTest);
+    initBackupScopeUi();
     refreshStats();
     refreshMemoryList();
     refreshAiSettings();
+  }
+
+  // ==================== 백업 범위 선택 ====================
+
+  function initBackupScopeUi() {
+    el('#scopeQuestions').addEventListener('change', updateScopeUiState);
+    el('#rangeAll').addEventListener('change', updateScopeUiState);
+    el('#rangeFilter').addEventListener('change', () => { updateScopeUiState(); loadExamFilterListOnce(); });
+    el('#examFilterAllBtn').addEventListener('click', () => { examList.forEach((e) => selectedExamIds.add(e.id)); renderExamFilterList(); });
+    el('#examFilterNoneBtn').addEventListener('click', () => { selectedExamIds.clear(); renderExamFilterList(); });
+    el('#examFilterSearch').addEventListener('input', renderExamFilterList);
+    updateScopeUiState();
+  }
+
+  function updateScopeUiState() {
+    const questionsOn = el('#scopeQuestions').checked;
+    el('#scopeQuestionsSub').classList.toggle('hidden', !questionsOn);
+    const filterMode = questionsOn && el('#rangeFilter').checked;
+    el('#examFilterBox').classList.toggle('hidden', !filterMode);
+  }
+
+  let examListLoaded = false;
+  async function loadExamFilterListOnce() {
+    if (examListLoaded) return;
+    examListLoaded = true;
+    const exams = await DB.getAllExams();
+    const questions = await DB.getAllQuestions();
+    const counts = {};
+    questions.forEach((q) => { counts[q.examId] = (counts[q.examId] || 0) + 1; });
+    examList = exams
+      .map((e) => ({ id: e.id, title: e.title || '(제목 없음)', subject: e.subject || '', qcount: counts[e.id] || 0 }))
+      .sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+    el('#scopeAllCount').textContent = exams.length;
+    // 기본은 전체 선택된 상태로 시작(사용자가 여기서 해제해 나가는 방식)
+    examList.forEach((e) => selectedExamIds.add(e.id));
+    renderExamFilterList();
+  }
+
+  function renderExamFilterList() {
+    const q = (el('#examFilterSearch').value || '').trim().toLowerCase();
+    const listEl = el('#examFilterList');
+    listEl.innerHTML = '';
+    const filtered = examList.filter((e) => !q || e.title.toLowerCase().includes(q) || e.subject.toLowerCase().includes(q));
+    filtered.forEach((e) => {
+      const row = document.createElement('label');
+      row.className = 'examFilterRow';
+      row.innerHTML = `<input type="checkbox" ${selectedExamIds.has(e.id) ? 'checked' : ''}>
+        <span class="efTitle">${escapeHtml(e.title)}</span><span class="efMeta">${escapeHtml(e.subject)} · ${e.qcount}문제</span>`;
+      row.querySelector('input').addEventListener('change', (ev) => {
+        if (ev.target.checked) selectedExamIds.add(e.id); else selectedExamIds.delete(e.id);
+        updateExamFilterCounts();
+      });
+      listEl.appendChild(row);
+    });
+    updateExamFilterCounts();
+  }
+
+  function updateExamFilterCounts() {
+    const sel = examList.filter((e) => selectedExamIds.has(e.id));
+    el('#examFilterSelCount').textContent = sel.length;
+    el('#examFilterQCount').textContent = sel.reduce((s, e) => s + e.qcount, 0);
+  }
+
+  function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  /** 현재 체크박스 상태 → DB.exportAll에 넘길 옵션 */
+  function currentBackupOpts() {
+    const includeSettings = el('#scopeSettings').checked;
+    const includeQuestions = el('#scopeQuestions').checked;
+    const includeExtras = el('#scopeExtras').checked;
+    let examIds = null;
+    if (includeQuestions && el('#rangeFilter').checked) examIds = Array.from(selectedExamIds);
+    return { includeSettings, includeQuestions, examIds, includeExtras };
   }
 
   async function refreshStats() {
@@ -38,20 +115,36 @@ const SettingsUI = (() => {
   }
 
   async function onBackup() {
+    const opts = currentBackupOpts();
+    if (!opts.includeSettings && !opts.includeQuestions) {
+      el('#backupStatus').textContent = '백업할 항목을 하나 이상 선택해주세요.';
+      return;
+    }
+    if (opts.includeQuestions && opts.examIds && opts.examIds.length === 0) {
+      el('#backupStatus').textContent = '"일부만 선택"을 골랐다면 문제지를 하나 이상 선택해주세요.';
+      return;
+    }
     el('#backupStatus').textContent = '백업 파일 생성 중…';
-    const data = await DB.exportAll((cur, total) => {
+    const data = await DB.exportAll(opts, (cur, total) => {
       el('#backupStatus').textContent = `백업 파일 생성 중… (${cur}/${total})`;
     });
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `exam-bank-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const parts = [];
+    if (opts.includeSettings) parts.push('설정');
+    if (opts.includeQuestions) parts.push(opts.examIds ? '문제일부' : '문제전체');
+    if (opts.includeQuestions && opts.includeExtras) parts.push('해설메모');
+    a.download = `exam-bank-backup-${parts.join('-') || '빈백업'}-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    el('#backupStatus').textContent = `백업 완료 (${data.questions.length}개 문제).`;
+    const qCount = data.questions ? data.questions.length : 0;
+    el('#backupStatus').textContent = opts.includeQuestions
+      ? `백업 완료 (${qCount}개 문제${opts.includeSettings ? ' + 앱 설정' : ''}).`
+      : `백업 완료 (앱 설정만).`;
   }
 
   async function onRestoreFileChosen(e) {

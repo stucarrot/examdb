@@ -1421,3 +1421,20 @@ textarea { resize: vertical; }
 .gtheme-eink .ctoc { background: #fff; color: #000; border: 2px solid #000; }
 .gtheme-eink .ctocChip.active, .gtheme-eink .ctocRow.active { background: #000; color: #fff; }
 .gtheme-eink .ctoc.expanded { background: #fff; }
+
+/* ---------- 백업 범위 선택 (설정 탭) ---------- */
+.backupScopeBox { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.backupScopeBox .hint { font-size: 12px; font-weight: 400; }
+.backupScopeSub { margin: 2px 0 0 26px; padding: 8px 10px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.radioLabel { display: flex; align-items: center; gap: 6px; font-size: 13.5px; cursor: pointer; }
+.examFilterBox { margin-top: 4px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--bg-soft, rgba(127,127,127,.06)); }
+.examFilterBox.hidden { display: none; }
+.examFilterToolbar { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.examFilterToolbar input[type="text"] { flex: 1 1 140px; min-width: 0; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 13px; }
+.examFilterToolbar button { font-size: 12px; padding: 4px 8px; }
+.examFilterList { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; }
+.examFilterRow { display: flex; align-items: baseline; gap: 8px; padding: 5px 4px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.examFilterRow:hover { background: rgba(127,127,127,.1); }
+.examFilterRow .efTitle { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+.examFilterRow .efMeta { color: var(--muted); white-space: nowrap; font-size: 12px; }
+.examFilterList:empty::after { content: '문제지가 없습니다.'; color: var(--muted); font-size: 12px; padding: 6px 4px; }

@@ -412,32 +412,78 @@ const DB = {
 
   // ---------------- 백업 / 복원 ----------------
 
-  /** 전체 백업(JSON, base64 이미지 포함) */
-  async exportAll(onProgress) {
-    const exams = await this.getAllExams();
-    const questions = await this.getAllQuestions();
-    const choices = await this.getAllChoices();
-    const metaAll = await this.getAllMeta(); // { key: value } 형태
-    const meta = {};
-    Object.keys(metaAll).forEach((key) => { if (!SENSITIVE_META_KEYS.includes(key)) meta[key] = metaAll[key]; });
-    const out = [];
-    let i = 0;
-    for (const q of questions) {
-      const blobs = await this.getImageBlobs(q);
-      const imagesB64 = [];
-      for (const b of blobs) imagesB64.push(await blobToBase64(b));
-      const clean = { ...q };
-      delete clean.imageIds;
-      out.push({ ...clean, imagesB64 });
-      i++;
-      if (onProgress) onProgress(i, questions.length);
+  /**
+   * 범위를 고른 백업(JSON, base64 이미지 포함).
+   * @param opts.includeSettings  앱 설정(meta, API 키 제외) 포함 여부 — 기본 true
+   * @param opts.includeQuestions 문제/정답(이미지·태그·표시·필기 포함) 포함 여부 — 기본 true
+   * @param opts.examIds          지정하면 이 시험지들의 문제만(부분 백업). 생략/null이면 전체.
+   * @param opts.includeExtras    해설·메모 포함 여부 — 기본 true (false면 각 문제에서 explanation/memo를 빼고 담음)
+   * @param onProgress            (cur, total) => void
+   */
+  async exportAll(opts = {}, onProgress) {
+    // 이전 호출부(exportAll(onProgress)) 호환: 첫 인자가 함수면 그게 onProgress
+    if (typeof opts === 'function') { onProgress = opts; opts = {}; }
+    const {
+      includeSettings = true,
+      includeQuestions = true,
+      examIds = null, // null = 전체, 배열이면 그 시험지들만
+      includeExtras = true,
+    } = opts;
+
+    const out = { app: 'examBank', version: 3, exportedAt: new Date().toISOString() };
+
+    if (includeSettings) {
+      const metaAll = await this.getAllMeta(); // { key: value } 형태
+      const meta = {};
+      Object.keys(metaAll).forEach((key) => { if (!SENSITIVE_META_KEYS.includes(key)) meta[key] = metaAll[key]; });
+      out.meta = meta;
     }
-    return { app: 'examBank', version: 3, exportedAt: new Date().toISOString(), exams, questions: out, choices, meta };
+
+    if (includeQuestions) {
+      const examIdSet = examIds ? new Set(examIds) : null;
+      let exams = await this.getAllExams();
+      let questions = await this.getAllQuestions();
+      let choices = await this.getAllChoices();
+      if (examIdSet) {
+        exams = exams.filter((e) => examIdSet.has(e.id));
+        questions = questions.filter((q) => examIdSet.has(q.examId));
+        choices = choices.filter((c) => examIdSet.has(c.examId));
+      }
+      const outQ = [];
+      let i = 0;
+      for (const q of questions) {
+        const blobs = await this.getImageBlobs(q);
+        const imagesB64 = [];
+        for (const b of blobs) imagesB64.push(await blobToBase64(b));
+        const clean = { ...q };
+        delete clean.imageIds;
+        if (!includeExtras) { delete clean.explanation; delete clean.memo; }
+        outQ.push({ ...clean, imagesB64 });
+        i++;
+        if (onProgress) onProgress(i, questions.length);
+      }
+      out.exams = exams;
+      out.questions = outQ;
+      out.choices = includeExtras ? choices : choices.map((c) => { const cc = { ...c }; delete cc.explanation; return cc; });
+    }
+
+    return out;
   },
 
-  /** 백업 복원. merge=false 면 기존 데이터 전부 삭제 후 복원 */
+  /** 백업 복원. merge=false면 "이 백업 파일에 실제로 들어있는 항목"만 기존 데이터를 지우고 교체한다.
+   *  (예: "앱 설정만" 백업을 전체교체 모드로 복원해도 문제 데이터는 그대로 남는다 — 백업에 없던 걸
+   *  지워버리는 사고를 막기 위함) */
   async importAll(data, { merge = true, onProgress } = {}) {
-    if (!merge) await this.clearAll();
+    const hasQuestions = !!(data && Array.isArray(data.questions));
+    const hasMeta = !!(data && data.meta);
+    if (!merge && hasQuestions) {
+      const t = await txStores(['exams', 'questions', 'images', 'choices'], 'readwrite');
+      t.objectStore('exams').clear();
+      t.objectStore('questions').clear();
+      t.objectStore('images').clear();
+      t.objectStore('choices').clear();
+      await new Promise((res, rej) => { t.oncomplete = res; t.onerror = () => rej(t.error); });
+    }
 
     const exams = (data && data.exams) || [];
     for (const ex of exams) {
@@ -468,12 +514,12 @@ const DB = {
       await this.addChoice(clean);
     }
 
-    // meta(가져오기 자동완성 기억 등 내부 설정)도 함께 있으면 복원한다.
-    // merge=false로 전체 교체한 경우엔 clearAll()이 exams/questions/images만
-    // 비웠으므로, 여기서도 같은 merge 플래그로 meta를 통일성 있게 처리한다.
-    // API 키 등 민감한 값(SENSITIVE_META_KEYS)은 혹시 옛 백업 파일에 섞여 있어도
-    // 복원하지 않는다 — 다른 사람이 준 백업으로 내 브라우저의 키가 덮어써지는 걸 방지.
-    if (data && data.meta) {
+    // meta(앱 설정/가져오기 자동완성 기억 등)도 함께 있으면 복원한다. 이 백업에 meta가 있고
+    // merge=false일 때만 기존 meta를 비운 뒤 교체한다(문제만 담긴 백업으로 전체교체해도
+    // 앱 설정은 보존됨, 반대도 마찬가지). API 키 등 민감한 값(SENSITIVE_META_KEYS)은 혹시 옛
+    // 백업 파일에 섞여 있어도 복원하지 않는다 — 다른 사람이 준 백업으로 내 브라우저의 키가
+    // 덮어써지는 걸 방지.
+    if (hasMeta) {
       const safeMeta = {};
       Object.keys(data.meta).forEach((key) => { if (!SENSITIVE_META_KEYS.includes(key)) safeMeta[key] = data.meta[key]; });
       await this.setAllMeta(safeMeta, { merge });

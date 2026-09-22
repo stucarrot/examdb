@@ -306,8 +306,30 @@
 
     <div class="card">
       <h2>백업 / 다른 컴퓨터로 이전</h2>
-      <p class="hint">문제 DB는 이 브라우저(이 컴퓨터)에만 저장됩니다. 다른 기기에서도 사용하려면 백업 파일을 내려받은 뒤, 그 기기에서 이 앱을 열어 "불러오기"로 복원하세요.</p>
-      <button id="btnBackup" class="btnPrimary">백업 파일 다운로드 (.json)</button>
+      <p class="hint">문제 DB는 이 브라우저(이 컴퓨터)에만 저장됩니다. 다른 기기에서도 사용하려면 백업 파일을 내려받은 뒤, 그 기기에서 이 앱을 열어 "불러오기"로 복원하세요. 아래에서 백업에 무엇을 담을지 고를 수 있습니다.</p>
+
+      <div class="backupScopeBox">
+        <label class="checkboxLabel"><input type="checkbox" id="scopeSettings" checked> <b>앱 설정</b> <span class="hint">— 글자크기·테마, AI 모델 선택 등 (API 키는 항상 제외)</span></label>
+
+        <label class="checkboxLabel"><input type="checkbox" id="scopeQuestions" checked> <b>문제와 정답</b> <span class="hint">— 문제 이미지, 정답, 태그, 표시, 필기 포함</span></label>
+        <div id="scopeQuestionsSub" class="backupScopeSub">
+          <label class="radioLabel"><input type="radio" name="questionRange" id="rangeAll" value="all" checked> 전체 (<span id="scopeAllCount">0</span>개 문제지)</label>
+          <label class="radioLabel"><input type="radio" name="questionRange" id="rangeFilter" value="filter"> 일부만 선택</label>
+          <div id="examFilterBox" class="examFilterBox hidden">
+            <div class="examFilterToolbar">
+              <input type="text" id="examFilterSearch" placeholder="문제지 제목/과목 검색">
+              <button type="button" id="examFilterAllBtn" class="btnGhost">전체 선택</button>
+              <button type="button" id="examFilterNoneBtn" class="btnGhost">전체 해제</button>
+            </div>
+            <div id="examFilterList" class="examFilterList"></div>
+            <p class="hint"><span id="examFilterSelCount">0</span>개 문제지 · <span id="examFilterQCount">0</span>개 문제 선택됨</p>
+          </div>
+        </div>
+
+        <label class="checkboxLabel"><input type="checkbox" id="scopeExtras" checked> <b>해설 및 메모</b> <span class="hint">— 체크 해제 시 문제/정답만 백업(해설·개인 메모 제외)</span></label>
+      </div>
+
+      <button id="btnBackup" class="btnPrimary" style="margin-top:12px;">선택한 범위 백업 (.json)</button>
       <div style="margin-top:14px;">
         <label class="checkboxLabel"><input type="checkbox" id="restoreMerge" checked> 기존 데이터에 합치기 (해제 시 전체 교체)</label><br>
         <input type="file" id="restoreFile" accept="application/json" style="margin-top:8px;">
