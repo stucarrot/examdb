@@ -213,8 +213,7 @@ const AnswerSheetImport = (() => {
 
   function ensurePdfWorker() {
     if (window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
     }
   }
 
@@ -268,6 +267,12 @@ const AnswerSheetImport = (() => {
     return allLines;
   }
 
+  // 이 앱의 다른 모든 라이브러리(pdf.js/pdf-lib/jszip/marked/dompurify/katex)는 vendor/ 폴더에
+  // 로컬로 내려받아 CDN 의존을 없앴지만(오프라인/APK용), Tesseract.js만은 예외로 남겨뒀다 —
+  // 본체 스크립트뿐 아니라 실행할 때마다 언어 학습 데이터(kor+eng, 수십 MB)까지 따로
+  // 내려받아야 해서 완전히 번들링하기엔 너무 무겁다. 즉 "이미지에서 정답표 OCR 인식"
+  // 기능만 최초 사용 시 인터넷이 필요하고, 그 외 문제풀이/라이브러리/PDF 가져오기 등은
+  // 전부 오프라인으로 동작한다(HANDOFF.md "APK로 패키징" 항목 참고).
   function ensureTesseract() {
     return new Promise((resolve, reject) => {
       if (window.Tesseract) { resolve(); return; }

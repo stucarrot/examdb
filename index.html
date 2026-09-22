@@ -7,7 +7,7 @@
 <title>객관식 문제은행 매니저</title>
 <link rel="stylesheet" href="css/styles.css">
 <!-- 해설 수식 렌더링(KaTeX). CSS는 head에서, JS는 body 하단에서 defer 로드 -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css"
+<link rel="stylesheet" href="vendor/katex/katex.min.css"
   integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
 </head>
 <body>
@@ -118,6 +118,13 @@
           <div id="reviewToolbar" class="reviewToolbar">
             <button id="drawBoxBtn" class="btnSecondary">＋ 새 박스 그리기</button>
             <button id="drawSetBoxBtn" class="btnSecondary">＋ 세트 공통 박스</button>
+            <button id="compModeBtn" class="btnSecondary" title="문제를 설문/자료/선지 구성요소로 나눈 결과를 보고 고칩니다 (언어논리·자료해석·상황판단 과목만)">🧩 구성요소 보정</button>
+            <span id="compTools" class="compTools hidden">
+              <select id="newCompKind" class="compKindSelect" title="새로 그릴 구성요소의 종류"></select>
+              <button id="drawCompBtn" class="btnSecondary">＋ 구성요소 그리기</button>
+              <button id="reanalyzeCompBtn" class="btnSecondary" title="선택한 구성요소가 속한 문제를 다시 분석">↻ 이 문제 재분석</button>
+              <button id="reanalyzeAllCompBtn" class="btnSecondary" title="모든 문제의 구성요소를 다시 분석(수정한 내용은 사라집니다)">↻ 전체 재분석</button>
+            </span>
             <span class="reviewHelp">박스 드래그=이동, 오른쪽 아래 손잡이=크기조절, 번호칸=문제번호 수정, ×=삭제. 같은 번호의 박스가 여러 개면 한 문제(여러 조각)로 합쳐집니다.</span>
             <div class="spacer"></div>
             <div class="zoomControl">
@@ -433,17 +440,14 @@
         <button id="detailZoomLabel" class="btnGhost detailZoomBtn detailZoomLabel" title="100%로 초기화 (0)">100%</button>
         <button id="detailZoomInBtn" class="btnGhost detailZoomBtn" title="확대 (+)">＋</button>
       </div>
-      <button id="detailViewToggle" class="btnGhost detailViewToggleBtn hidden">⊞ 한 장씩 보기</button>
+      <button id="detailTocBtn" class="btnGhost detailViewToggleBtn hidden" title="이 문제의 구성요소(설문/자료/선지) 목차">📑 목차</button>
       <button id="detailModeToggle" class="btnGhost detailViewToggleBtn hidden" title="설문+선지가 텍스트로 모두 인식된 문제에서 이미지 대신 텍스트로 보기">🔤 텍스트로 보기</button>
       <button id="detailClose" class="btnGhost">✕ 닫기</button>
     </div>
     <div class="detailBody">
       <div class="detailViewer">
-        <button id="detailPrevBtn" class="detailNavArrow detailNavArrow-prev hidden" title="이전 이미지 (←)">◀</button>
         <div id="detailImages" class="detailImages"></div>
         <div id="detailTextView" class="detailTextView hidden"></div>
-        <button id="detailNextBtn" class="detailNavArrow detailNavArrow-next hidden" title="다음 이미지 (→)">▶</button>
-        <div id="detailImageCounter" class="detailImageCounter hidden"></div>
         <span id="detailMarkBadge" class="markBadge markBadge-viewer hidden"></span>
       </div>
       <aside class="detailSidebar">
@@ -786,6 +790,7 @@
         <span id="solveTimer" class="solveTimer" title="이 문제에 머무른 시간">⏱ 00:00</span>
         <button id="solveInfoBtn" class="solveIconBtn" title="문제 정보">ℹ️</button>
         <button id="solveViewSettingsBtn" class="solveIconBtn" title="보기 설정 (이미지·텍스트 / 마크 / 글자·테마)">🎨</button>
+        <button id="solveTocBtn" class="solveIconBtn hidden" title="구성요소 목차 켜기/끄기 (설문·박스·선지로 바로 이동)">📑</button>
         <button id="solveDrawBtn" class="solveIconBtn" title="그리기 켜기 (문제 위에 필기)">✏️</button>
         <button id="solveListBtn" class="solveIconBtn" title="문제 목록">☰</button>
       </div>
@@ -920,22 +925,27 @@
   </div>
 </div>
 
-<!-- 라이브러리(pdf.js, pdf-lib) — CDN, 무료 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- 라이브러리(pdf.js, pdf-lib, jszip, marked, dompurify, katex) — 전부 vendor/ 폴더에 로컬로
+     내려받아 둔 버전(원래 CDN에서 쓰던 것과 정확히 같은 버전). 앱 전체가 인터넷 연결 없이도
+     완전히 동작해야 해서(특히 안드로이드 APK로 패키징했을 때) CDN 의존을 없앴다 —
+     HANDOFF.md의 "APK로 패키징" 항목 참고. -->
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
 <!-- 해설 렌더링(마크다운+수식): marked(마크다운) → DOMPurify(정제) → KaTeX(수식) 순서로 적용 -->
-<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js"
-  integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"
-  integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="vendor/katex/katex.min.js"></script>
+<script src="vendor/katex/auto-render.min.js"></script>
 
 <script src="js/db.js"></script>
 <script src="js/marks.js"></script>
 <script src="js/drawing.js"></script>
-<script src="js/pdfAnalyze.js"></script>
+<script src="js/nativePen.js"></script>
+<script src="js/structure.js"></script>
+<script src="js/compView.js"></script>
+<script src="js/compToc.js"></script>
+  <script src="js/pdfAnalyze.js"></script>
 <script src="js/markdownRender.js"></script>
 <script src="js/aiExplain.js"></script>
 <script src="js/tagger.js"></script>

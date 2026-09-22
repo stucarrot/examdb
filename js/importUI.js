@@ -16,7 +16,9 @@
 const ImportUI = (() => {
   let batch = [];
   let session = null; // 편집 모드에서 사용하는 작업용 사본: {itemRef, examMeta, pages, boxes, nextTempId}
-  let drawMode = false; // false | 'question' | 'setIntro'
+  let drawMode = false; // false | 'question' | 'setIntro' | 'comp'
+  let compMode = false;  // 구성요소 보정 화면 여부
+  let selectedCompId = null;
   let dragState = null;
   let zoomLevel = 1;
 
@@ -34,6 +36,11 @@ const ImportUI = (() => {
     el('#drawBoxBtn').addEventListener('click', () => toggleDrawMode('question'));
     el('#drawSetBoxBtn').addEventListener('click', () => toggleDrawMode('setIntro'));
     el('#saveAllBtn').addEventListener('click', onFinishReview);
+    el('#compModeBtn').addEventListener('click', toggleCompMode);
+    el('#drawCompBtn').addEventListener('click', () => toggleDrawMode('comp'));
+    el('#reanalyzeCompBtn').addEventListener('click', () => reanalyzeComps(false));
+    el('#reanalyzeAllCompBtn').addEventListener('click', () => reanalyzeComps(true));
+    fillKindSelect(el('#newCompKind'), 'text');
     el('#cancelImportBtn').addEventListener('click', onCancelReview);
     el('#toggleSidebarBtn').addEventListener('click', toggleSidebar);
 
@@ -219,7 +226,7 @@ const ImportUI = (() => {
 
     if ((item.status === 'analyzed' || item.status === 'reviewed') && item.boxes) {
       const qcount = new Set(item.boxes.filter((b) => b.kind !== 'setIntro').map((b) => b.qnum)).size;
-      const setCount = item.boxes.filter((b) => b.kind === 'setIntro').length;
+      const setCount = new Set(item.boxes.filter((b) => b.kind === 'setIntro').map((b) => b.setRange.join('-'))).size;
       const overflowCount = item.boxes.filter((b) => b.isOverflowPart).length;
       const msg = document.createElement('div');
       msg.className = 'batchRowMsg';
@@ -344,8 +351,12 @@ const ImportUI = (() => {
       if (!item.examMeta.examType) item.examMeta.examType = '기타';
       if (!item.examMeta.subject) item.examMeta.subject = '기타';
 
+      const analyzeOpts = currentAnalyzeOpts();
+      item.twoColumn = analyzeOpts.twoColumn;
+      // 구성요소 분석은 언어논리·자료해석·상황판단 과목에서만 수행한다(다른 과목은 시간도 아끼고 결과도 안 씀).
+      analyzeOpts.structure = PDFStructure.isSupportedSubject(item.examMeta.subject);
       const result = await PDFAnalyze.analyze(item.file, {
-        ...currentAnalyzeOpts(),
+        ...analyzeOpts,
         startQnum: item.startQnum || 1,
         onPage: (cur, total) => {
           el('#importStatus').textContent = `[${item.fileName}] 페이지 분석 중… (${cur}/${total})`;
@@ -353,6 +364,8 @@ const ImportUI = (() => {
       });
       item.pages = result.pages;
       item.boxes = result.boxes;
+      item.components = result.components || [];
+      item.structCols = result.structCols || null; // 구성요소 재분석용(메모리에만 보관)
       item.lastQnum = result.lastQnum;
       item.nextTempId = 0;
       item.status = 'analyzed';
@@ -385,11 +398,15 @@ const ImportUI = (() => {
       examMeta: item.examMeta,
       pages: item.pages,
       boxes: JSON.parse(JSON.stringify(item.boxes)), // 작업용 사본 (취소 시 버려짐)
+      comps: JSON.parse(JSON.stringify(item.components || [])),
       nextTempId: item.nextTempId || 0,
     };
     el('#batchListView').classList.add('hidden');
     el('#reviewEditView').classList.remove('hidden');
     setZoom(1);
+    compMode = false;
+    selectedCompId = null;
+    updateCompModeAvailability();
     renderReview();
   }
 
@@ -397,6 +414,7 @@ const ImportUI = (() => {
     if (!session) return;
     const item = session.itemRef;
     item.boxes = session.boxes;
+    item.components = session.comps;
     item.nextTempId = session.nextTempId;
     item.status = 'reviewed';
     backToList();
@@ -423,10 +441,92 @@ const ImportUI = (() => {
 
   function toggleDrawMode(kind) {
     drawMode = drawMode === kind ? false : kind;
+    updateDrawButtons();
+  }
+
+  function updateDrawButtons() {
     el('#drawBoxBtn').classList.toggle('active', drawMode === 'question');
     el('#drawSetBoxBtn').classList.toggle('active', drawMode === 'setIntro');
+    el('#drawCompBtn').classList.toggle('active', drawMode === 'comp');
     el('#drawBoxBtn').textContent = drawMode === 'question' ? '새 박스 그리기 (그리는 중… 클릭해서 취소)' : '＋ 새 박스 그리기';
     el('#drawSetBoxBtn').textContent = drawMode === 'setIntro' ? '세트 공통 박스 (그리는 중… 클릭해서 취소)' : '＋ 세트 공통 박스';
+    el('#drawCompBtn').textContent = drawMode === 'comp' ? '구성요소 (그리는 중… 클릭해서 취소)' : '＋ 구성요소 그리기';
+  }
+
+  // ==================== 구성요소 보정 ====================
+
+  function fillKindSelect(sel, current) {
+    sel.innerHTML = '';
+    ['stem', 'data', 'choices'].forEach((g) => {
+      const og = document.createElement('optgroup');
+      og.label = PDFStructure.GROUP_LABELS[g];
+      Object.entries(PDFStructure.KINDS).filter(([, v]) => v.group === g).forEach(([k, v]) => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = v.label;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    sel.value = current;
+  }
+
+  function compSupported() {
+    return !!(session && PDFStructure.isSupportedSubject(session.examMeta && session.examMeta.subject));
+  }
+
+  /** 언어논리/자료해석/상황판단이 아닌 과목이면 구성요소 보정 버튼을 비활성화한다. */
+  function updateCompModeAvailability() {
+    const btn = el('#compModeBtn');
+    const ok = compSupported();
+    btn.disabled = !ok;
+    btn.title = ok
+      ? '문제를 설문/자료/선지 구성요소로 나눈 결과를 보고 고칩니다'
+      : '구성요소 분석은 언어논리·자료해석·상황판단 과목에서만 사용할 수 있습니다 (현재 과목: ' + ((session && session.examMeta && session.examMeta.subject) || '없음') + ')';
+    if (!ok && compMode) toggleCompMode();
+    el('#compTools').classList.toggle('hidden', !compMode);
+    btn.classList.toggle('active', compMode);
+  }
+
+  function toggleCompMode() {
+    if (!session) return;
+    if (!compMode && !compSupported()) return;
+    if (!compMode && !session.itemRef.structCols) {
+      alert('이 파일은 구성요소 분석을 하지 않고 분석되었습니다(분석 당시 과목이 대상이 아니었을 수 있어요). 과목을 확인한 뒤 목록에서 "다시 분석"을 눌러주세요.');
+      return;
+    }
+    compMode = !compMode;
+    selectedCompId = null;
+    if (!compMode && drawMode === 'comp') { drawMode = false; updateDrawButtons(); }
+    updateCompModeAvailability();
+    redrawBoxes();
+  }
+
+  function compContaining(c) {
+    // 구성요소의 중심점이 들어 있는 문제/세트 박스 (구성요소가 어느 문제에 속하는지 판단 — 박스 번호를 고쳐도 따라간다)
+    const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+    return session.boxes.find((b) => b.pageIndex === c.pageIndex && cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) || null;
+  }
+
+  /** 선택한 구성요소가 속한 문제(또는 전체)의 구성요소를 다시 분석한다. */
+  function reanalyzeComps(all) {
+    if (!session || !session.itemRef.structCols) { alert('재분석에 필요한 분석 데이터가 없습니다. 파일을 다시 분석해주세요.'); return; }
+    let parts;
+    if (all) {
+      if (!confirm('모든 문제의 구성요소를 다시 분석합니다. 지금까지 수정한 구성요소는 사라집니다. 계속할까요?')) return;
+      parts = session.boxes;
+    } else {
+      const sel = session.comps.find((c) => c.id === selectedCompId);
+      const owner = sel ? compContaining(sel) : null;
+      if (!owner) { alert('먼저 다시 분석할 문제의 구성요소를 하나 클릭해 선택해주세요.'); return; }
+      parts = owner.kind === 'setIntro'
+        ? session.boxes.filter((b) => b.kind === 'setIntro' && b.setRange.join('-') === owner.setRange.join('-'))
+        : session.boxes.filter((b) => b.kind !== 'setIntro' && b.qnum === owner.qnum);
+    }
+    const inParts = (c) => { const ob = compContaining(c); return !!ob && parts.includes(ob); };
+    const fresh = PDFStructure.analyzeAll(parts, session.itemRef.structCols, {});
+    session.comps = session.comps.filter((c) => !inParts(c)).concat(fresh);
+    selectedCompId = null;
+    redrawBoxes();
   }
 
   function renderReview() {
@@ -466,9 +566,100 @@ const ImportUI = (() => {
       overlay.innerHTML = '';
       session.boxes
         .filter((b) => b.pageIndex === pageIndex)
-        .forEach((box) => overlay.appendChild(buildBoxEl(box, pg)));
+        .forEach((box) => overlay.appendChild(compMode ? buildDimBoxEl(box, pg) : buildBoxEl(box, pg)));
+      if (compMode) {
+        session.comps
+          .filter((c) => c.pageIndex === pageIndex)
+          .forEach((c) => overlay.appendChild(buildCompEl(c, pg)));
+      }
     });
   }
+
+  /** 구성요소 보정 화면에서 문제 박스는 흐린 점선 틀로만 보여준다(조작 불가). */
+  function buildDimBoxEl(box, pg) {
+    const div = document.createElement('div');
+    div.className = 'qbox dimBox' + (box.kind === 'setIntro' ? ' setIntroBox' : '');
+    div.style.left = (box.x / pg.width) * 100 + '%';
+    div.style.top = (box.y / pg.height) * 100 + '%';
+    div.style.width = (box.w / pg.width) * 100 + '%';
+    div.style.height = (box.h / pg.height) * 100 + '%';
+    const tag = document.createElement('div');
+    tag.className = 'dimBoxTag';
+    tag.textContent = box.kind === 'setIntro' ? '세트 ' + box.setRange.join('-') : '#' + box.qnum;
+    div.appendChild(tag);
+    return div;
+  }
+
+  function buildCompEl(c, pg) {
+    const div = document.createElement('div');
+    div.className = 'compBox k-' + c.kind + ' g-' + c.group + (c.id === selectedCompId ? ' selected' : '');
+    div.style.left = (c.x / pg.width) * 100 + '%';
+    div.style.top = (c.y / pg.height) * 100 + '%';
+    div.style.width = (c.w / pg.width) * 100 + '%';
+    div.style.height = (c.h / pg.height) * 100 + '%';
+    div.dataset.id = c.id;
+
+    const label = document.createElement('div');
+    label.className = 'compLabel';
+    // 선택된 구성요소만 종류 드롭다운을 보여주고, 나머지는 짧은 글자 라벨로(화면이 덜 복잡하도록)
+    let kindSel = null;
+    if (c.id === selectedCompId) {
+      kindSel = document.createElement('select');
+      kindSel.className = 'compKindSelect';
+      fillKindSelect(kindSel, c.kind);
+      kindSel.addEventListener('mousedown', (e) => e.stopPropagation());
+      kindSel.addEventListener('change', () => {
+        c.kind = kindSel.value;
+        c.group = PDFStructure.KINDS[c.kind].group;
+        redrawBoxes();
+      });
+      label.appendChild(kindSel);
+    } else {
+      const kn = document.createElement('span');
+      kn.textContent = PDFStructure.KINDS[c.kind] ? PDFStructure.KINDS[c.kind].label : c.kind;
+      label.appendChild(kn);
+    }
+    if (c.marker) { const m = document.createElement('span'); m.className = 'compMarker'; m.textContent = c.marker; label.appendChild(m); }
+    if (c.title) { const t = document.createElement('span'); t.className = 'compTitle'; t.textContent = c.title.slice(0, 16); label.appendChild(t); }
+    const del = document.createElement('button');
+    del.className = 'qboxDel';
+    del.textContent = '×';
+    del.title = '이 구성요소 삭제';
+    del.addEventListener('mousedown', (e) => e.stopPropagation());
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      session.comps = session.comps.filter((x) => x.id !== c.id);
+      if (selectedCompId === c.id) selectedCompId = null;
+      redrawBoxes();
+    });
+    label.appendChild(del);
+    div.appendChild(label);
+
+    const handle = document.createElement('div');
+    handle.className = 'resizeHandle';
+    div.appendChild(handle);
+
+    div.addEventListener('mousedown', (e) => {
+      if (e.target === handle || e.target === kindSel || e.target === del) return;
+      e.preventDefault();
+      if (selectedCompId !== c.id) { selectedCompId = c.id; }
+      const wrap = div.closest('.pageReview');
+      const imgRect = el('img', wrap).getBoundingClientRect();
+      dragState = { mode: 'move', box: c, startX: e.clientX, startY: e.clientY, origX: c.x, origY: c.y, imgRect, pg };
+      redrawBoxes();
+    });
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectedCompId = c.id;
+      const wrap = div.closest('.pageReview');
+      const imgRect = el('img', wrap).getBoundingClientRect();
+      dragState = { mode: 'resize', box: c, startX: e.clientX, startY: e.clientY, origW: c.w, origH: c.h, imgRect, pg };
+    });
+    return div;
+  }
+
+
 
   function buildBoxEl(box, pg) {
     const isSet = box.kind === 'setIntro';
@@ -498,6 +689,12 @@ const ImportUI = (() => {
       });
       label.appendChild(document.createTextNode('세트'));
       label.appendChild(editEl);
+      if (box.partIndex > 1) {
+        const badge = document.createElement('span');
+        badge.className = 'partBadge';
+        badge.textContent = '조각' + box.partIndex;
+        label.appendChild(badge);
+      }
     } else {
       editEl = document.createElement('input');
       editEl.type = 'text';
@@ -605,7 +802,16 @@ const ImportUI = (() => {
     if (dragState && dragState.mode === 'draw' && dragState.cur) {
       const { x, y, w, h } = dragState.cur;
       if (w > 10 && h > 10) {
-        if (dragState.kind === 'setIntro') {
+        if (dragState.kind === 'comp') {
+          const kind = el('#newCompKind').value || 'text';
+          const c = {
+            id: 'mc_' + (session.nextTempId++) + '_' + Date.now(),
+            qnum: null, setRange: null, pageIndex: dragState.pg.pageIndex,
+            x, y, w, h, kind, group: PDFStructure.KINDS[kind].group, title: '', text: '',
+          };
+          session.comps.push(c);
+          selectedCompId = c.id;
+        } else if (dragState.kind === 'setIntro') {
           const maxQnum = Math.max(1, ...session.boxes.filter((b) => b.kind !== 'setIntro').map((b) => b.qnum || 0));
           session.boxes.push({
             id: 'manualSet_' + (session.nextTempId++) + '_' + Date.now(),
@@ -626,16 +832,41 @@ const ImportUI = (() => {
         }
       }
       drawMode = false;
-      el('#drawBoxBtn').classList.remove('active');
-      el('#drawSetBoxBtn').classList.remove('active');
-      el('#drawBoxBtn').textContent = '＋ 새 박스 그리기';
-      el('#drawSetBoxBtn').textContent = '＋ 세트 공통 박스';
+      updateDrawButtons();
       redrawBoxes();
     }
     dragState = null;
   });
 
   // ==================== 전체 저장(DB 커밋) ====================
+
+  /**
+   * 리뷰에서 확정된 구성요소(페이지 픽셀 좌표)를, 이 문제를 이루는 조각(parts, 저장 순서 = 이미지 순서)
+   * 기준의 0~1 정규화 좌표로 바꾼다. 어느 조각에 속하는지는 구성요소 중심점이 들어 있는 조각으로 판단한다.
+   * 결과: [{id, group, kind, title, text, marker, part, x, y, w, h}] (part = 이미지 인덱스)
+   */
+  function mapComponentsToParts(item, parts) {
+    const out = [];
+    (item.components || []).forEach((c) => {
+      const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+      const pi = parts.findIndex((p) => p.pageIndex === c.pageIndex && cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h);
+      if (pi < 0) return;
+      const p = parts[pi];
+      const x0 = Math.max(p.x, c.x), y0 = Math.max(p.y, c.y);
+      const x1 = Math.min(p.x + p.w, c.x + c.w), y1 = Math.min(p.y + p.h, c.y + c.h);
+      if (x1 - x0 < 4 || y1 - y0 < 4) return;
+      out.push({
+        id: c.id, group: c.group, kind: c.kind,
+        title: (c.title || '').slice(0, 60), text: (c.text || '').slice(0, 120), marker: c.marker || '',
+        // body: 텍스트 보기/혼합 보기에서 쓰는 정리된 본문(줄바꿈 포함). 수동으로 그린 구성요소는 없을 수 있다.
+        ...(c.body ? { body: c.body.slice(0, 8000) } : {}),
+        part: pi,
+        x: (x0 - p.x) / p.w, y: (y0 - p.y) / p.h, w: (x1 - x0) / p.w, h: (y1 - y0) / p.h,
+      });
+    });
+    out.sort((a, b) => a.part - b.part || a.y - b.y || a.x - b.x);
+    return out;
+  }
 
   async function saveItemToDB(item) {
     const extractChoices = el('#extractChoicesChk').checked;
@@ -668,7 +899,15 @@ const ImportUI = (() => {
     const qnums = Object.keys(groups).map(Number).sort((a, b) => a - b);
     let saved = 0;
     for (const qn of qnums) {
-      const parts = groups[qn].sort((a, b) => a.pageIndex - b.pageIndex || a.y - b.y);
+      // 조각 순서 = 지면을 읽는 순서(페이지 → 왼쪽/오른쪽 열 → 위에서 아래). 예전엔 (페이지, y)만
+      // 봐서, 같은 페이지에서 왼쪽 열 아래에서 오른쪽 열 위로 이어지는 문제/세트 지문의 조각
+      // 순서가 뒤집혔다(오른쪽 열 조각의 y가 더 작아서). 열은 박스의 실제 위치(가운데 x)로 판정한다.
+      const twoCol = item.twoColumn !== false;
+      const colOf = (bx) => {
+        const pgx = item.pages[bx.pageIndex];
+        return twoCol && pgx && (bx.x + bx.w / 2) > pgx.width / 2 ? 1 : 0;
+      };
+      const parts = groups[qn].sort((a, b) => a.pageIndex - b.pageIndex || colOf(a) - colOf(b) || a.y - b.y);
       const blobs = [];
       for (const part of parts) {
         const pg = item.pages[part.pageIndex];
@@ -700,6 +939,9 @@ const ImportUI = (() => {
       const stemFullText = PDFAnalyze.extractStem(combinedText);
       const searchText = combinedText.replace(/\s+/g, ' ').trim();
 
+      // ---- 구성요소(설문/자료/선지) — 언어논리·자료해석·상황판단만 ----
+      const components = PDFStructure.isSupportedSubject(exam.subject) ? mapComponentsToParts(item, parts) : null;
+
       const question = {
         id: DB.uid('q'),
         examId: exam.id,
@@ -721,6 +963,7 @@ const ImportUI = (() => {
         hasTextChoices: false, // 아래서 선지 추출에 성공하면(마커 2개 이상) true로 덮어씀
         createdAt: Date.now(),
       };
+      if (components) question.components = components;
 
       // ---- 선지만 추출(텍스트) — 사이드바 "선지 텍스트도 함께 추출" 체크박스 ----
       // 마커가 2개 미만으로 잡히면(선지가 표/그래프 이미지인 문제) splitChoices가

@@ -40,10 +40,16 @@
  */
 
 const PDFAnalyze = (() => {
+
+  // 세트문제 공통 지문 표기: "[19~20]", "[문19~문20]", "[문 19.～문 20.]", "[9  ∼ 10]" 등.
+  // 대괄호 안에서 (선택)"문" + 숫자 + (선택)마침표 + 물결/하이픈 + (선택)"문" + 숫자 + (선택)마침표.
+  // 내부 공백 개수는 무관하다(\s*). 물결표는 ASCII ~ 외에 전각 ～(U+FF5E), ∼(U+223C),
+  // 〜(U+301C), ∽ 등 HWP 변환 PDF에서 흔한 변형과 하이픈/대시류를 모두 허용한다.
+  const SET_MARK_RE = /\[\s*(?:문\s*)?(\d{1,3})\s*\.?\s*[~∼～〜∽\-–—－―‐]\s*(?:문\s*)?(\d{1,3})\s*\.?\s*\]/;
+  const CHOICE_CHAR_RE = /[①②③④⑤⑥⑦⑧⑨]/;
   function setupWorker() {
     if (window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
     }
   }
 
@@ -97,6 +103,10 @@ const PDFAnalyze = (() => {
     let pendingContinuation = null; // { qnum, partIndex }
     let continuationHops = 0;
     const MAX_CONTINUATION_HOPS = 5;
+    // 세트 공통 지문이 열/페이지를 넘어가는 경우의 상태: 마커가 있는 열에서 첫 멤버(예: 19번)를
+    // 못 찾았으면, 그 문제가 시작하는 열-유닛까지 지문이 이어진다고 보고 조각을 계속 만든다.
+    let pendingSet = null; // { range:[a,b], partIndex, hops }
+    const structCols = {}; // "페이지_열" → 구성요소 분석용 열 데이터
 
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p);
@@ -119,7 +129,8 @@ const PDFAnalyze = (() => {
       // 제거하고, 공백 문자로만 이루어진 아이템은 그대로 남긴다.
       const rawItems = textContent.items.map((it) => {
         const [vx, vy] = viewport.convertToViewportPoint(it.transform[4], it.transform[5]);
-        return { str: it.str, x: vx, y: vy };
+        // w/h: 글자 폭·높이(px). 줄의 오른쪽 끝(x1)과 글자 크기(fs)를 구하는 데 쓴다(구성요소 분석용).
+        return { str: it.str, x: vx, y: vy, w: (it.width || 0) * scale, h: (it.height || 0) * scale };
       }).filter((it) => it.str && it.str.length > 0);
 
       const pageWidth = viewport.width;
@@ -156,11 +167,16 @@ const PDFAnalyze = (() => {
         // x0: 그 줄에서 가장 왼쪽 아이템의 x좌표(문제 번호 줄 판별 시 "컬럼 좌측
         // 정렬 여부"를 확인하는 용도 — 표 안에 우연히 있는 숫자는 보통 컬럼
         // 좌측 끝에서 시작하지 않으므로 오탐 방지에 쓴다).
-        return lns.map((l) => ({
-          y: l.y,
-          text: l.items.map((i) => i.str).join(''),
-          x0: l.items.length ? l.items[0].x : 0,
-        }));
+        return lns.map((l) => {
+          const hs = l.items.map((i) => i.h).filter((h) => h > 0).sort((a, b) => a - b);
+          return {
+            y: l.y,
+            text: l.items.map((i) => i.str).join(''),
+            x0: l.items.length ? l.items[0].x : 0,
+            x1: l.items.reduce((m, i) => Math.max(m, i.x + (i.w || 0)), 0),
+            fs: hs.length ? hs[Math.floor(hs.length / 2)] : 14,
+          };
+        });
       }
 
       const colLines = { 0: buildLines(colItems[0]), 1: twoColumn ? buildLines(colItems[1]) : [] };
@@ -191,35 +207,63 @@ const PDFAnalyze = (() => {
         // hardBottomY까지 스캔해서, 마지막 문제 판정/크롭에 그 여분 구간의
         // 실제 잉크 정보도 쓸 수 있게 한다.
         const inkProfile = computeInkRows(ctx, xStart, xEnd, headerLimit, hardBottomY);
+        // 구성요소(설문/자료/선지) 분석용 열 데이터: 텍스트 줄 + 선/테두리 박스 후보.
+        if (window.PDFStructure && opts.structure !== false) {
+          structCols[(p - 1) + '_' + col] = {
+            pageIndex: p - 1, col, xStart, xEnd, headerLimit, hardBottomY, lineH, lines, inkProfile,
+            ...PDFStructure.detectLines(ctx, xStart, xEnd, headerLimit, hardBottomY, lineH),
+          };
+        }
 
-        // 문제 시작 지점과 세트 마커("[30~31]" 등)를 찾는다
+        // 문제 시작 지점과 세트 마커("[30~31]", "[문 19.～문 20.]" 등)를 찾는다
         const boundaries = []; // {y, qnum}
-        const setMarkers = []; // {y, range:[a,b]}
+        const setMarkers = []; // {y(마커 줄), startY(공통 지문 안내문이 시작하는 줄), range:[a,b]}
         // 문제 번호 줄이 시작될 수 있는 x범위(컬럼 좌측 약 25% 이내). 표
         // 안에 우연히 있는 숫자는 보통 이보다 안쪽(들여쓰기 된 곳)에서
         // 시작하므로 오탐 방지에 쓴다.
         const numGateX = xStart + (xEnd - xStart) * 0.25;
-        for (const line of lines) {
-          const setM = line.text.match(/\[\s*(\d{1,3})\s*[~∼～\-]\s*(\d{1,3})\s*\]/);
-          if (setM) setMarkers.push({ y: line.y, range: [parseInt(setM[1], 10), parseInt(setM[2], 10)] });
-
+        for (let li = 0; li < lines.length; li++) {
+          const line = lines[li];
           // 문제 번호 줄은 "N."(5급공채 등) 또는 "문 N."(7급공채 등, "문"과
           // 번호 사이에 공백 1개 이상) 두 형식을 모두 지원한다. 번호 바로
-          // 뒤에 오는 문자는 더 이상 제한하지 않는다 — 예전엔 [가-힣<(]로
-          // 좁게 제한했었는데, 甲/乙 같은 한자나 사설 글리프(X재의 X 등),
-          // "IS-LM..."처럼 영문으로 시작하는 문제가 이 제한에 걸려 인식이
-          // 안 됐고, expectedNum 순차 검증 특성상 그 문제 하나만 놓치는 게
-          // 아니라 그 뒤 모든 문제가 연쇄적으로 인식 안 되는 심각한 버그로
-          // 이어졌다. 대신 (a) 소수점(예: "12.5")과의 혼동을 막기 위해 바로
-          // 뒤에 숫자가 오면 제외하고, (b) 표 안 숫자 오탐 방지는 위
-          // numGateX(좌측 정렬 여부) 검사로 대체했다.
+          // 뒤에 오는 문자는 제한하지 않는다(甲/乙, 영문, 사설 글리프로 시작하는
+          // 문제도 있어서). 소수점("12.5")만 (?!\d)로 제외하고, 표 안 숫자 오탐은
+          // numGateX(좌측 정렬 여부)로 거른다.
           const numM = line.text.match(/^\s*(?:문\s+)?(\d{1,3})\s*\.(?!\d)/);
-          if (numM && line.x0 <= numGateX) {
-            const num = parseInt(numM[1], 10);
-            if (num === expectedNum) {
-              boundaries.push({ y: line.y, qnum: num });
-              expectedNum++;
+          // 법령/규정 지문 속 "1. … 2. … 5. …" 같은 번호 목록이 기대 번호와 우연히 맞아떨어져 문제 시작으로
+          // 오인되는 것을 막는다: 진짜 문제 번호 줄은 몇 줄 안에 발문 끝("…것은?", "…시오.")이 나오고,
+          // 그 전에 또 다른 번호 줄이 끼어들지 않는다.
+          const isQuestionStart = !!(numM && line.x0 <= numGateX && parseInt(numM[1], 10) === expectedNum &&
+            stemEndsSoon(lines, li, numGateX, expectedNum));
+
+          // 세트 공통 지문 표기는 "보통의 문제처럼 시작하지 않는 줄"에서만 찾는다.
+          // (첫 멤버 번호가 지금 기대하는 번호 이상이어야 진짜 세트로 인정 — 본문 속에서
+          // 이미 지나간 문항을 가리키는 "[문 3～문 4]" 같은 참조를 걸러낸다)
+          if (!isQuestionStart) {
+            const setM = line.text.match(SET_MARK_RE);
+            if (setM) {
+              const a = parseInt(setM[1], 10), b = parseInt(setM[2], 10);
+              if (b > a && b - a <= 9 && a >= expectedNum) {
+                // 안내문이 두 줄로 나뉜 경우("※ 다음 <표>는 ... 자료이다.\n <표>를 보고
+                // 물음에 답하시오. [문 7～문 8]") 마커는 둘째 줄에 있고 공통 지문은 첫째
+                // 줄("※ ...")부터 시작한다. 마커 줄이 ※/[ 로 시작하지 않으면 바로 위 줄들을
+                // 거슬러 올라가 "※"로 시작하는 줄을 찾는다(줄 간격이 정상이고 선택지 줄이
+                // 아닌 동안만).
+                let startIdx = li;
+                if (!/^\s*[※\[]/.test(line.text)) {
+                  for (let j = li - 1; j >= 0 && li - j <= 3; j--) {
+                    if (lines[j + 1].y - lines[j].y > lineH * 1.7) break;
+                    if (CHOICE_CHAR_RE.test(lines[j].text)) break;
+                    if (/^\s*※/.test(lines[j].text)) { startIdx = j; break; }
+                  }
+                }
+                setMarkers.push({ y: line.y, startY: lines[startIdx].y, range: [a, b] });
+              }
             }
+          }
+          if (isQuestionStart) {
+            boundaries.push({ y: line.y, qnum: parseInt(numM[1], 10) });
+            expectedNum++;
           }
         }
 
@@ -255,14 +299,51 @@ const PDFAnalyze = (() => {
           return findContentEndPx(inkProfile, y1, upperBound, isColumnBottom ? gapPxLenient : gapPx, markerYsInRange);
         };
 
+        // 이 컬럼에서 "새 항목"(문제 번호 줄 또는 세트 안내문)이 처음 시작하는 y.
+        // 이전 컬럼에서 이어진 조각이 이 y 앞까지만 차지하도록 상한으로 쓴다.
+        const firstCutY = Math.min(
+          boundaries.length ? boundaries[0].y : Infinity,
+          setMarkers.length ? setMarkers[0].startY : Infinity
+        );
+
+        // (A0) 이전 열/페이지에서 시작한 세트 공통 지문이 이 열로 이어지는 경우.
+        //      첫 멤버(예: 19번) 번호 줄이 이 열에 있으면 그 직전까지, 없으면 열 끝까지가
+        //      공통 지문이다. 마커가 있는 열에서 첫 멤버를 못 찾았을 때만 이 상태가 세팅된다.
+        if (pendingSet) {
+          const firstLineInCol = lines.find((l) => l.y >= headerLimit);
+          const contStart = firstLineInCol ? Math.max(0, firstLineInCol.y - topPad) : headerLimit;
+          const memberB = boundaries.find((b) => b.qnum === pendingSet.range[0]);
+          // 첫 멤버가 없는데 다른 문제 번호줄/새 세트가 먼저 나오면 거기까지만 지문으로 본다
+          const upper = memberB ? memberB.y - topPad : (isFinite(firstCutY) ? firstCutY - topPad : hardBottomY);
+          const ink = findLastInk(inkProfile, contStart, upper);
+          if (ink.sawInk) {
+            const y2 = Math.min(upper, ink.end + bottomPad);
+            allBoxes.push({
+              id: 'set' + (p - 1) + '_' + col + '_' + pendingSet.range.join('-') + '_' + pendingSet.partIndex,
+              pageIndex: p - 1, col,
+              x: xStart, y: contStart, w: xEnd - xStart, h: Math.max(20, y2 - contStart),
+              kind: 'setIntro',
+              setRange: pendingSet.range,
+              partIndex: pendingSet.partIndex,
+              fullText: fullTextFor(contStart, y2),
+            });
+          }
+          if (memberB || !ink.sawInk || isFinite(firstCutY) || pendingSet.hops >= MAX_CONTINUATION_HOPS) {
+            pendingSet = null;
+          } else {
+            pendingSet = { range: pendingSet.range, partIndex: pendingSet.partIndex + 1, hops: pendingSet.hops + 1 };
+          }
+        }
+
         // (A) 이전 컬럼에서 끝나지 못한 문제가 있으면, 이 컬럼 맨 위부터
         //     이어지는 조각으로 캡처한다. 이때도 일반 문제박스와 동일하게,
         //     이 컬럼의 첫 줄이 잘리지 않도록 반 줄만큼 위쪽 여유를 둔다.
         if (pendingContinuation) {
           const firstLineInCol = lines.find((l) => l.y >= headerLimit);
           const contStart = firstLineInCol ? Math.max(0, firstLineInCol.y - topPad) : headerLimit;
-          const isColBottom = boundaries.length === 0;
-          const upperBound = boundaries.length ? boundaries[0].y - topPad : hardBottomY;
+          const isColBottom = !isFinite(firstCutY);
+          // 세트 안내문도 "새 항목의 시작"이다: 이어지는 문제가 세트 안내문까지 삼키지 않게 한다.
+          const upperBound = isFinite(firstCutY) ? firstCutY - topPad : hardBottomY;
           const { end, hadGap, sawInk } = findContentEnd(contStart, upperBound, isColBottom);
 
           if (!sawInk) {
@@ -288,11 +369,11 @@ const PDFAnalyze = (() => {
           } else {
             // hadGap일 때 실제 검출된 끝 지점 바로 아래로 살짝 여유를 더 준다
             // (하강 획이나 마지막 줄 다음 여백이 빠듯해 보이지 않도록). 단,
-            // 다음 문제 박스의 시작(upperBound)을 넘어서면 안 되므로 클램프.
+            // 다음 항목의 시작(upperBound)을 넘어서면 안 되므로 클램프.
             const y2 = hadGap ? Math.min(end + bottomPad, upperBound) : upperBound;
             allBoxes.push({
               id: 'cont' + (p - 1) + '_' + col + '_' + pendingContinuation.qnum + '_' + pendingContinuation.partIndex,
-              pageIndex: p - 1,
+              pageIndex: p - 1, col,
               x: xStart, y: contStart, w: xEnd - xStart, h: Math.max(20, y2 - contStart),
               qnum: pendingContinuation.qnum,
               isOverflowPart: true,
@@ -300,7 +381,7 @@ const PDFAnalyze = (() => {
               stemText: '',
               fullText: fullTextFor(contStart, y2),
             });
-            if (hadGap || boundaries.length > 0) {
+            if (hadGap || isFinite(firstCutY)) {
               pendingContinuation = null;
               continuationHops = 0;
             } else if (continuationHops < MAX_CONTINUATION_HOPS) {
@@ -316,18 +397,24 @@ const PDFAnalyze = (() => {
         // (B) 이 컬럼에서 새로 시작하는 문제들의 박스를 만든다
         for (let i = 0; i < boundaries.length; i++) {
           const y1 = Math.max(0, boundaries[i].y - topPad);
-          const isLastInCol = i + 1 >= boundaries.length;
-          const upperBound = isLastInCol ? hardBottomY : boundaries[i + 1].y - topPad;
+          // 다음 "항목" = 다음 문제 번호줄 또는 다음 세트 안내문 중 더 위에 있는 것.
+          // 세트 안내문을 상한으로 쓰지 않으면, 세트 안내문이 열 맨 아래에 있을 때 앞 문제가
+          // 그 안내문까지 삼키거나 "다음 열로 넘어감"으로 오판된다.
+          const nextBoundaryY = i + 1 < boundaries.length ? boundaries[i + 1].y : Infinity;
+          const nextSetY = setMarkers.reduce((m, sm) => (sm.y > boundaries[i].y ? Math.min(m, sm.startY) : m), Infinity);
+          const nextCutY = Math.min(nextBoundaryY, nextSetY);
+          const isLastInCol = !isFinite(nextCutY);
+          const upperBound = isLastInCol ? hardBottomY : nextCutY - topPad;
           const { end, hadGap } = findContentEnd(y1, upperBound, isLastInCol);
           let y2;
           let overflow = false;
           if (hadGap) {
             // 실제 검출된 끝 지점 바로 아래로 살짝 여유를 더 준다(하강 획이나
             // 선택지 마지막 줄이 박스 경계에 바짝 붙어 보이지 않도록). 단,
-            // 다음 문제 박스의 시작(upperBound)을 넘어서면 안 되므로 클램프.
+            // 다음 항목의 시작(upperBound)을 넘어서면 안 되므로 클램프.
             y2 = Math.min(end + bottomPad, upperBound);
           } else if (!isLastInCol) {
-            // 다음 문제 번호가 바로 이어서 시작됐다면(=텍스트상 새 경계가 있다면)
+            // 다음 항목이 바로 이어서 시작됐다면(=텍스트상 새 경계가 있다면)
             // 여백을 못 찾았어도 그 경계에서 자른다(예외적 상황에 대한 방어)
             y2 = upperBound;
           } else {
@@ -338,7 +425,7 @@ const PDFAnalyze = (() => {
 
           const box = {
             id: 'b' + (p - 1) + '_' + col + '_' + i,
-            pageIndex: p - 1,
+            pageIndex: p - 1, col,
             x: xStart, y: y1, w: xEnd - xStart, h: Math.max(20, y2 - y1),
             qnum: boundaries[i].qnum,
             isOverflowPart: overflow,
@@ -353,7 +440,7 @@ const PDFAnalyze = (() => {
             // 컬럼의 마지막 문제가 페이지/컬럼 맨 아래에 딱 붙어서 끝나
             // 여백(gap)을 확정할 만큼의 공간이 없었을 뿐, 사실은 이미
             // 내용이 다 끝난 경우다. 다음 컬럼에서 실제로 이어지는 내용이
-            // 하나도 없는 걸로 확인되면(아래 (A) 블록의 `!sawInk` 분기)
+            // 하나도 없는 걸로 확인되면(위 (A) 블록의 `!sawInk` 분기)
             // 이 박스를 "조각"이 아닌 일반 박스로 되돌려야 하므로, 박스
             // 참조와 "이 컬럼 안에서 실제로 잉크가 있었던 마지막 지점"을
             // 같이 들고 있는다.
@@ -368,19 +455,41 @@ const PDFAnalyze = (() => {
           }
         }
 
-        // (C) 세트문제 공통 박스: "[a~b]" 표기부터 첫 멤버(a번) 시작 전까지
+        // (C) 세트문제 공통 박스: 안내문 시작줄부터 첫 멤버(a번) 시작 전까지.
+        //     첫 멤버가 이 열에서 마커 아래에 있으면 한 조각으로 끝나고, 없으면(지문이 다음
+        //     열/페이지로 이어짐) 이 열의 내용 끝까지를 1번 조각으로 만들고 pendingSet으로
+        //     다음 열-유닛에서 이어서 만든다.
         for (const sm of setMarkers) {
-          const firstMemberBoundary = boundaries.find((b) => b.qnum === sm.range[0]);
-          if (!firstMemberBoundary) continue;
-          const y1 = Math.max(0, sm.y - topPad);
-          const y2 = Math.max(y1 + 20, firstMemberBoundary.y - topPad);
-          allBoxes.push({
-            id: 'set' + (p - 1) + '_' + col + '_' + sm.range.join('-'),
-            pageIndex: p - 1,
-            x: xStart, y: y1, w: xEnd - xStart, h: y2 - y1,
-            kind: 'setIntro',
-            setRange: sm.range,
-          });
+          const memberB = boundaries.find((b) => b.qnum === sm.range[0] && b.y > sm.y);
+          const y1 = Math.max(0, sm.startY - topPad);
+          const setId = 'set' + (p - 1) + '_' + col + '_' + sm.range.join('-');
+          if (memberB) {
+            const y2 = Math.max(y1 + 20, memberB.y - topPad);
+            allBoxes.push({
+              id: setId + '_1',
+              pageIndex: p - 1, col,
+              x: xStart, y: y1, w: xEnd - xStart, h: y2 - y1,
+              kind: 'setIntro', setRange: sm.range, partIndex: 1,
+              fullText: fullTextFor(y1, y2),
+            });
+          } else {
+            // 이 열에서 마커 뒤에 나오는 다음 항목(다른 세트 안내문 등)이 있으면 거기까지
+            const nextCut = Math.min(
+              boundaries.reduce((m, b) => (b.y > sm.y ? Math.min(m, b.y) : m), Infinity),
+              setMarkers.reduce((m, o) => (o.y > sm.y ? Math.min(m, o.startY) : m), Infinity)
+            );
+            const upper = isFinite(nextCut) ? nextCut - topPad : hardBottomY;
+            const ink = findLastInk(inkProfile, y1, upper);
+            const y2 = ink.sawInk ? Math.min(upper, ink.end + bottomPad) : Math.min(upper, y1 + lineH * 2);
+            allBoxes.push({
+              id: setId + '_1',
+              pageIndex: p - 1, col,
+              x: xStart, y: y1, w: xEnd - xStart, h: Math.max(20, y2 - y1),
+              kind: 'setIntro', setRange: sm.range, partIndex: 1,
+              fullText: fullTextFor(y1, y2),
+            });
+            if (!isFinite(nextCut)) pendingSet = { range: sm.range, partIndex: 2, hops: 1 };
+          }
         }
       }
 
@@ -404,7 +513,15 @@ const PDFAnalyze = (() => {
       }
     }
 
-    return { pages, boxes: allBoxes, lastQnum: expectedNum - 1 };
+    let components = [];
+    if (window.PDFStructure && opts.structure !== false) {
+      try {
+        components = PDFStructure.analyzeAll(allBoxes, structCols, { lastChoiceChar });
+      } catch (err) {
+        console.error('구성요소 분석 실패(문제 인식에는 영향 없음):', err);
+      }
+    }
+    return { pages, boxes: allBoxes, lastQnum: expectedNum - 1, components, structCols: opts.structure === false ? null : structCols };
   }
 
   /**
@@ -572,6 +689,36 @@ const PDFAnalyze = (() => {
       inkRows[row] = inkCount >= 2;
     }
     return { inkRows, yOffset: y0 };
+  }
+
+
+
+  /** 번호 줄(lines[li])이 진짜 문제 시작인지 가늠한다(번호 목록 오탐 방지용, 관대하게).
+   *  - 몇 줄 안에 발문 끝("…것은?", "…시오.")이 나오면 문제 시작으로 본다.
+   *  - 발문 끝이 없고, 바로 다음 몇 줄 안에 "다음 번호(N+1)" 줄이 또 나오면 법령/규정 속 번호 목록이다.
+   *  - 그 외는 (구형 시험지 등) 문제로 본다. */
+  function stemEndsSoon(lines, li, gateX, num) {
+    const END = /([?？]|[시라]오\s*\.|하라\s*\.)\s*$/;
+    for (let k = li; k < Math.min(lines.length, li + 6); k++) {
+      if (END.test(lines[k].text.trim())) return true;
+    }
+    for (let k = li + 1; k < Math.min(lines.length, li + 4); k++) {
+      const m = lines[k].text.match(/^\s*(?:문\s+)?(\d{1,3})\s*\.(?!\d)/);
+      if (m && parseInt(m[1], 10) === num + 1 && lines[k].x0 <= gateX) return false;
+    }
+    return true;
+  }
+
+  /** [y1, y2) 구간에서 마지막으로 잉크가 있는 행의 y를 찾는다(아래에서 위로 훑음).
+   *  게이트 없이 "이 구간 안의 실제 내용 끝"만 필요할 때(세트 공통 지문의 열별 조각 등) 쓴다. */
+  function findLastInk(inkProfile, y1, y2) {
+    const { inkRows, yOffset } = inkProfile;
+    const startIdx = Math.max(0, Math.floor(y1 - yOffset));
+    const endIdx = Math.min(inkRows.length, Math.ceil(y2 - yOffset));
+    for (let i = endIdx - 1; i >= startIdx; i--) {
+      if (inkRows[i]) return { end: i + yOffset + 4, sawInk: true };
+    }
+    return { end: y1, sawInk: false };
   }
 
   /**

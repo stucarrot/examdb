@@ -821,7 +821,7 @@ textarea { resize: vertical; }
    함께 스크롤된다. 그리기 모드를 끄면(.hidden) 필기 자체도 화면에서 사라지고, 다시 켜야만
    보인다(js/drawing.js의 setEnabled() 참고 — 이전엔 꺼도 항상 보이게 했었는데 요청에 따라
    변경). */
-.drawCanvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3; }
+.drawCanvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3; /* 컨테이너 위(형제)에 보이는 영역 크기로만 올라간다 */ }
 .drawCanvas.hidden { display: none; }
 .drawCanvas-active { cursor: crosshair; }
 
@@ -832,9 +832,11 @@ textarea { resize: vertical; }
   position: absolute; top: 50%; right: 0; transform: translateY(-50%); z-index: 6;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 8px 6px; border-radius: 14px 0 0 14px;
-  background: rgba(20, 22, 31, .55); backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,.12); border-right: none; box-shadow: 0 4px 16px rgba(0,0,0,.35);
-  transition: padding .15s ease, gap .15s ease, background .15s ease;
+  /* backdrop-filter(블러)와 transition은 일부러 뺐다 — 캔버스가 갱신될 때마다 뒤 배경 블러를
+     다시 계산하고 전환 애니메이션이 프레임을 계속 만들어서, e-ink(Boox 등)에서 필기가 버벅이는
+     원인이 됐다. 반투명 배경만으로 충분하다. */
+  background: rgba(20, 22, 31, .72);
+  border: 1px solid rgba(255,255,255,.12); border-right: none;
 }
 .drawToolbar.hidden { display: none; }
 /* 최소화 상태 — "⤡"로 접으면 위로 스크롤/원래대로(⤢)/아래로 스크롤 3개만 작게 남고
@@ -844,7 +846,7 @@ textarea { resize: vertical; }
    덜 가리게 한다. */
 .drawToolbar.minimized {
   gap: 16px; padding: 10px 3px; background: rgba(20, 22, 31, .22); border-color: rgba(255,255,255,.08);
-  box-shadow: none; backdrop-filter: blur(2px);
+  box-shadow: none;
 }
 .drawToolbar.minimized > *:not(.drawKeepMin) { display: none; }
 .drawToolbar.minimized .drawTBtn { width: 20px; height: 20px; font-size: 10px; background: rgba(255,255,255,.05); color: #fff; }
@@ -1299,3 +1301,123 @@ textarea { resize: vertical; }
   filter: blur(4px); transition: filter .12s ease;
 }
 .aiApiKeyInput:focus { filter: none; }
+
+/* E-잉크 테마: 화면 갱신 비용을 줄이려고 전환/애니메이션/부드러운 스크롤을 전부 끈다. */
+.solveBox.gtheme-eink, .solveBox.gtheme-eink * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+
+/* ---------- 구성요소 보정(리뷰 화면) ---------- */
+.compTools { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.compTools.hidden { display: none; }
+.compKindSelect { font-size: 12px; padding: 1px 2px; border-radius: 4px; max-width: 110px; }
+#compModeBtn:disabled { opacity: .45; cursor: not-allowed; }
+.qbox.dimBox { border: 1px dashed #8b93a7; background: transparent; pointer-events: none; }
+.dimBoxTag { position: absolute; right: 2px; bottom: 2px; font-size: 10px; color: #6b7280; background: rgba(255,255,255,.8); padding: 0 3px; border-radius: 3px; }
+.compBox {
+  --c: #00a040; position: absolute; border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 10%, transparent);
+  cursor: move; box-sizing: border-box;
+}
+.compBox.selected { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--c); z-index: 5; background: color-mix(in srgb, var(--c) 18%, transparent); }
+.compLabel {
+  position: absolute; top: -22px; left: -2px; background: var(--c); color: #fff; font-size: 11px;
+  padding: 1px 4px; border-radius: 4px; display: flex; align-items: center; gap: 4px; white-space: nowrap; z-index: 6;
+}
+.compLabel .compMarker { font-weight: 700; }
+.compLabel .compTitle { opacity: .9; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.compBox .resizeHandle { background: var(--c); }
+.compBox.g-stem { --c: #0057ff; }
+.compBox.g-choices { --c: #e0007a; }
+.compBox.k-text { --c: #00a040; }
+.compBox.k-box_titled, .compBox.k-box_plain { --c: #0080a0; }
+.compBox.k-table { --c: #008b8b; }
+.compBox.k-graph, .compBox.k-figure { --c: #6a00c8; }
+.compBox.k-note { --c: #d07000; }
+.compBox.k-mixed, .compBox.k-formula { --c: #6b7280; }
+
+/* ---------- 구성요소 블록 뷰어 (compView.js) — 문제 뷰어/문제풀이 공용 ---------- */
+.cvScroller { overflow: auto; position: relative; box-sizing: border-box; }
+.cvScroller.ctocGutter { padding-left: 76px; }
+.detailCv { width: 100%; height: 100%; }
+.cvColumn {
+  margin: 0 auto; display: flex; flex-direction: column; align-items: flex-start; box-sizing: border-box;
+  background: #fff; min-height: 100%; box-shadow: 0 2px 14px rgba(0,0,0,.3);
+}
+.cvBlock { position: relative; flex: 0 0 auto; box-sizing: border-box; max-width: 100%; }
+.cvImg { overflow: hidden; background: #fff; }
+.cvImg img { position: absolute; max-width: none !important; height: auto !important; display: block; box-shadow: none !important; border-radius: 0 !important; user-select: none; -webkit-user-drag: none; background: transparent !important; }
+.cvRow { display: flex; align-items: flex-start; width: 100%; flex: 0 0 auto; }
+.cvRow > .cvBlock { flex: 0 0 auto; }
+.cvSel { outline: 3px solid #3b82ff; outline-offset: -3px; z-index: 1; }
+.gtheme-eink .cvSel, .tvTheme-eink.cvSel { outline-color: #000; outline-width: 4px; }
+.cvToggle {
+  position: absolute; top: 3px; right: 3px; z-index: 3; font-size: 12px; line-height: 1; padding: 3px 6px;
+  border-radius: 10px; border: 1px solid rgba(127,127,127,.55); background: rgba(255,255,255,.88); color: #333; cursor: pointer; opacity: .7;
+}
+.cvToggle:hover { opacity: 1; }
+/* 텍스트 블록 */
+.cvText { width: 100%; align-self: stretch; padding: 12px 40px 12px 16px; background: #fff; color: #1c2333; }
+.cvBody p { margin: 0 0 .6em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cvBody p:last-child { margin-bottom: 0; }
+.cvText.k-stem .cvBody, .cvText.k-setStem .cvBody { font-weight: 700; }
+.cvText.k-note .cvBody { font-size: .85em; opacity: .8; }
+.cvText.k-viewbox, .cvText.k-box_titled, .cvText.k-box_plain { border: 1px solid rgba(127,127,127,.7); margin: 4px 0; width: calc(100% - 8px); align-self: center; }
+.cvBoxTitle { text-align: center; font-weight: 700; margin-bottom: .5em; }
+.cvChoice { display: flex; gap: 10px; align-items: baseline; }
+.cvMarker { font-weight: 700; flex: 0 0 auto; min-width: 1.4em; }
+.cvChoiceBody { overflow-wrap: anywhere; }
+.cvChoiceBody > div { white-space: pre-wrap; }
+.tvFont-sm .cvBody { font-size: 14px; line-height: 1.6; }
+.tvFont-md .cvBody { font-size: 17px; line-height: 1.7; }
+.tvFont-lg .cvBody { font-size: 20px; line-height: 1.75; }
+.tvFont-xl .cvBody { font-size: 24px; line-height: 1.8; }
+.cvText[class*="tvTheme-"] .cvMarker { color: inherit; }
+.tvTheme-light .cvMarker { color: var(--accent-dark); } .tvTheme-dark .cvMarker { color: #8fa0ff; }
+.tvTheme-sepia .cvMarker { color: #8a5a2b; } .tvTheme-dim .cvMarker { color: #93a4ff; }
+.tvTheme-mint .cvMarker { color: #178a5f; } .tvTheme-lavender .cvMarker { color: #7c4fd1; }
+.tvTheme-rose .cvMarker { color: #c94f6d; } .tvTheme-ocean .cvMarker { color: #1f6fa8; }
+.tvTheme-eink .cvMarker { color: #000; text-decoration: underline; }
+/* 문제 뷰어: 글자크기/테마 조절 막대(텍스트가 있을 때만) */
+.detailTvBar { position: absolute; top: 8px; right: 12px; z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.detailTvBar:empty { display: none; }
+.tvPopBtn { border: 1px solid rgba(255,255,255,.3); background: rgba(20,22,31,.8); color: #fff; border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.detailTvBar .tvControls { margin: 0; background: rgba(20,22,31,.92); color: #fff; border-color: rgba(255,255,255,.2); }
+.detailTvBar .tvControls.hidden { display: none; }
+
+/* ---------- 플로팅 목차 (compToc.js): 그리기 툴바처럼 켜고 끄는 미니 목차 ↔ 큰 사이드바 ---------- */
+.ctoc {
+  position: absolute; left: 6px; top: 8px; z-index: 7; max-height: calc(100% - 16px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 3px; padding: 4px; border-radius: 10px;
+  background: rgba(20, 22, 31, .78); border: 1px solid rgba(255,255,255,.14); color: #e8eaf2;
+}
+.ctoc.hidden { display: none; }
+.ctocHead, .ctocChip {
+  border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; font-family: inherit;
+  font-size: 11px; line-height: 1.2; padding: 4px 7px; border-radius: 6px; text-align: left; white-space: nowrap;
+}
+.ctocHead { text-align: center; font-size: 13px; opacity: .85; }
+.ctocChip { --c: #22c55e; border-left: 3px solid var(--c); }
+.ctocChip.g-stem { --c: #3b82ff; } .ctocChip.g-choices { --c: #ff4fa8; }
+.ctocChip.k-box_titled, .ctocChip.k-box_plain, .ctocChip.k-viewbox { --c: #22a7c8; }
+.ctocChip.k-table { --c: #14b8a6; } .ctocChip.k-graph, .ctocChip.k-figure { --c: #a855f7; }
+.ctocChip.k-note { --c: #f59e0b; } .ctocChip.k-viewbox { --c: #22a7c8; }
+.ctocChip:hover, .ctocHead:hover { background: rgba(255,255,255,.1); }
+.ctocChip.active { background: color-mix(in srgb, var(--c) 35%, transparent); border-color: var(--c); font-weight: 700; }
+.ctoc.expanded { width: min(300px, 80%); top: 0; left: 0; bottom: 0; max-height: none; border-radius: 0; padding: 8px 8px 16px; gap: 0; background: rgba(24,26,36,.97); }
+.ctocTop { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 8px; font-size: 13px; }
+.ctocIcon { border: none; background: transparent; color: inherit; font-size: 15px; cursor: pointer; padding: 2px 8px; }
+.ctocGroup { margin: 10px 2px 4px; font-size: 12px; font-weight: 700; opacity: .85; }
+.ctocGroup.g-stem { color: #7fa8ff; } .ctocGroup.g-data { color: #6ee7a0; } .ctocGroup.g-choices { color: #ff8fc6; }
+.ctocRow {
+  --c: #22c55e; display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left; background: transparent;
+  border: 1px solid transparent; border-radius: 6px; color: inherit; cursor: pointer; padding: 6px 8px; font-size: 13px; font-family: inherit;
+}
+.ctocRow:hover { background: rgba(255,255,255,.08); }
+.ctocRow.active { background: color-mix(in srgb, var(--c) 30%, transparent); border-color: var(--c); }
+.ctocRow.g-stem { --c: #3b82ff; } .ctocRow.g-choices { --c: #ff4fa8; }
+.ctocRow.k-box_titled, .ctocRow.k-box_plain, .ctocRow.k-viewbox { --c: #22a7c8; }
+.ctocRow.k-table { --c: #14b8a6; } .ctocRow.k-graph, .ctocRow.k-figure { --c: #a855f7; } .ctocRow.k-note { --c: #f59e0b; }
+.ctocDot { width: 8px; height: 8px; border-radius: 2px; background: var(--c); flex: 0 0 auto; }
+.ctocName { font-weight: 600; flex: 0 0 auto; }
+.ctocDetail { opacity: .7; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gtheme-eink .ctoc { background: #fff; color: #000; border: 2px solid #000; }
+.gtheme-eink .ctocChip.active, .gtheme-eink .ctocRow.active { background: #000; color: #fff; }
+.gtheme-eink .ctoc.expanded { background: #fff; }

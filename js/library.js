@@ -24,9 +24,6 @@ const LibraryUI = (() => {
   const EMPTY_SENTINEL = '__EMPTY__';
   let currentDetailId = null;
   let detailObjectURLs = [];
-  let detailPartsLayout = 'stack';
-  let detailViewMode = 'all'; // 'all' | 'single' — 여러 이미지 조각을 나란히 볼지 한 장씩 볼지
-  let detailIndex = 0;
   let detailNavList = [];   // 현재 뷰어에서 "이전 문제/다음 문제"로 이동할 수 있는 문제 목록(연 시점의 filtered 스냅샷)
   let detailNavIndex = -1;  // detailNavList 안에서 현재 문제의 위치
   let detailZoom = 1;       // 문제 뷰어 확대 배율(1 = 원래 맞춤 크기)
@@ -35,6 +32,9 @@ const LibraryUI = (() => {
   let lastRenderedDetailMode = 'image'; // renderDetailBody가 매번 갱신 — 키보드 단축키가 "지금 실제로 보이는 모드"를 알아야 해서(effectiveDetailMode 재계산 없이 참조용)
   let detailChoices = [];   // 텍스트 보기용, 현재 문제의 choices 스토어 레코드 캐시(마커 순 정렬)
   const ZOOM_MIN = 0.5, ZOOM_MAX = 3, ZOOM_STEP = 0.25;
+  let detailCtl = null;       // 문제 본문 블록 뷰어(compView.js) 컨트롤러
+  let detailToc = null;       // 플로팅 목차(compToc.js) — 켜고 끄기/미니·확장 상태는 기기에 기억
+  let detailRenderToken = 0;  // 문제를 빠르게 넘길 때 늦게 끝난 이전 렌더를 버리기 위한 표식
   let zoomPanState = null;  // 확대된 이미지를 드래그로 스크롤(팬)하는 동안의 상태
   let currentEditExamId = null;
   let currentView = 'questions'; // 'questions' | 'papers' | 'choices'
@@ -163,10 +163,10 @@ const LibraryUI = (() => {
     el('#detailExplainEditTab').addEventListener('click', () => setDetailExplainTab('edit'));
     el('#detailExplainPreviewTab').addEventListener('click', () => setDetailExplainTab('preview'));
     el('#detailExplainAiBtn').addEventListener('click', onDetailAiExplain);
-    el('#detailViewToggle').addEventListener('click', toggleDetailViewMode);
     el('#detailModeToggle').addEventListener('click', toggleDetailMode);
-    el('#detailPrevBtn').addEventListener('click', () => stepDetailImage(-1));
-    el('#detailNextBtn').addEventListener('click', () => stepDetailImage(1));
+    // 플로팅 목차: 뷰어 위에 떠서 켜고 끌 수 있다(버튼=헤더의 📑 목차). 글자크기/테마 막대는 같은 뷰어 위쪽 가운데.
+    detailToc = CompToc.create(el('.detailViewer'), el('#detailTocBtn'));
+    el('#detailTextView').className = 'detailTvBar';
     el('#detailPrevQBtn').addEventListener('click', () => stepDetailQuestion(-1));
     el('#detailNextQBtn').addEventListener('click', () => stepDetailQuestion(1));
     el('#detailZoomInBtn').addEventListener('click', () => setZoom(detailZoom + ZOOM_STEP));
@@ -178,10 +178,10 @@ const LibraryUI = (() => {
       e.preventDefault();
       setZoom(detailZoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
     }, { passive: false });
-    // 확대된 이미지를 마우스 드래그로 팬(스크롤)
+    // 확대된 상태에서 마우스 드래그로 팬(스크롤)
     el('#detailImages').addEventListener('mousedown', (e) => {
-      const cell = e.target.closest('.detailImgCell.zoomed');
-      if (!cell || e.button !== 0) return;
+      if (detailZoom <= 1.001 || e.button !== 0 || e.target.closest('button')) return;
+      const cell = el('#detailImages');
       zoomPanState = { cell, startX: e.clientX, startY: e.clientY, scrollLeft: cell.scrollLeft, scrollTop: cell.scrollTop };
       cell.classList.add('grabbing');
       e.preventDefault();
@@ -194,9 +194,9 @@ const LibraryUI = (() => {
     document.addEventListener('mouseup', () => {
       if (zoomPanState) { zoomPanState.cell.classList.remove('grabbing'); zoomPanState = null; }
     });
-    // 이미지 더블클릭으로 빠르게 확대/원래크기 토글
+    // 더블클릭으로 빠르게 확대/원래크기 토글
     el('#detailImages').addEventListener('dblclick', (e) => {
-      if (!e.target.closest('.detailImgCell')) return;
+      if (!e.target.closest('.cvBlock') || e.target.closest('button')) return;
       setZoom(detailZoom > 1.001 ? 1 : 2);
     });
     document.addEventListener('keydown', (e) => {
@@ -210,9 +210,7 @@ const LibraryUI = (() => {
       // 태그/해설/메모 등 입력창에 타이핑 중일 때는 화살표·+/-/0/PageUp/PageDown을 그대로 텍스트 입력으로 사용
       const tag = (document.activeElement && document.activeElement.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === 'ArrowLeft') { if (lastRenderedDetailMode === 'image') stepDetailImage(-1); }
-      else if (e.key === 'ArrowRight') { if (lastRenderedDetailMode === 'image') stepDetailImage(1); }
-      else if (e.key === 'PageUp') { e.preventDefault(); stepDetailQuestion(-1); }
+      if (e.key === 'PageUp') { e.preventDefault(); stepDetailQuestion(-1); }
       else if (e.key === 'PageDown') { e.preventDefault(); stepDetailQuestion(1); }
       else if (e.key === '+' || e.key === '=') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(detailZoom + ZOOM_STEP); } }
       else if (e.key === '-' || e.key === '_') { if (lastRenderedDetailMode === 'image') { e.preventDefault(); setZoom(detailZoom - ZOOM_STEP); } }
@@ -222,7 +220,6 @@ const LibraryUI = (() => {
     // 모바일↔데스크톱 폭을 오가는 경우(창 크기 조절, 회전 등)에도 대비해 옵션 UI 위치를 재정리한다.
     window.addEventListener('resize', () => {
       if (!el('#detailPanel').classList.contains('hidden')) {
-        applyZoom();
         layoutMobileDetailChrome();
       }
     });
@@ -828,9 +825,6 @@ const LibraryUI = (() => {
     currentDetailId = id;
     detailObjectURLs.forEach((u) => URL.revokeObjectURL(u));
     detailObjectURLs = await DB.getImageURLs(q);
-    detailPartsLayout = q.partsLayout === 'row' ? 'row' : 'stack';
-    detailViewMode = 'all';
-    detailIndex = 0;
     detailZoom = 1;
     // 이미지/텍스트 모드는 "내가 바꾸기 전까지" 유지되는 선호값(detailTextPref, 전역)이지,
     // 문제 하나 열 때마다 리셋되는 값이 아니다 — 이전 문제에서 텍스트로 보고 있었다면
@@ -852,18 +846,13 @@ const LibraryUI = (() => {
     el('#detailExplainAiStatus').textContent = '';
     setDetailExplainTab('edit');
 
-    el('#detailModeToggle').classList.toggle('hidden', !q.hasTextChoices);
-    // 모바일 하단 탭 중 "보기설정"은 이 문제가 텍스트 지원이 안 되면(hasTextChoices=false)
-    // 어차피 안에 보여줄 내용이 없으므로(토글 버튼도 위에서 숨겨짐) 탭 자체를 숨긴다.
-    const mobileTabView = el('#detailMobileTabView');
-    if (mobileTabView) mobileTabView.classList.toggle('hidden', !q.hasTextChoices);
     mobileSheetOpen = null; // 문제를 새로 열면 열려있던 옵션 시트는 닫아서 다음 문제 이미지가 바로 보이게 함
     applyMobileSheetState();
     layoutMobileDetailChrome();
 
     updateDetailNav();
-    renderDetailBody(q);
     el('#detailPanel').classList.remove('hidden');
+    await renderDetailBody(q);
   }
 
   /** 뷰어 구석의 마크 배지(#detailMarkBadge)를 markId 기준으로 다시 그린다.
@@ -877,68 +866,62 @@ const LibraryUI = (() => {
     badge.classList.toggle('hidden', !html);
   }
 
-  /** 지금 이 문제에 대해 실제로 보여줄 모드. "텍스트로 보기"를 선호(detailTextPref)해도
-   * 이 문제가 텍스트 지원이 안 되면(hasTextChoices=false) 이미지로 자동 대체한다 —
-   * 선호값 자체는 그대로 유지되므로 다음 문제가 텍스트 지원이면 다시 텍스트로 보인다. */
-  function effectiveDetailMode(q) {
-    return detailTextPref && q && q.hasTextChoices ? 'text' : 'image';
+  /** 전체(기본) 보기 방식: 전역 선호값. 구성요소별로는 블록의 🔤/🖼 버튼으로 따로 바꿀 수 있다(혼합 보기). */
+  function detailDefaultMode() { return detailTextPref ? 'text' : 'image'; }
+
+  /** 문제 본문을 세로 한 줄(여러 조각도 이어서)로 그린다. 구성요소가 있으면 구성요소 블록 + 플로팅 목차. */
+  async function renderDetailBody(q) {
+    const token = ++detailRenderToken;
+    const host = el('#detailImages');
+    host.className = 'cvScroller detailCv';
+    const ctl = await CompView.mount(host, q, detailObjectURLs, {
+      choices: detailChoices, defaultMode: detailDefaultMode(), zoom: detailZoom, onChange: onDetailViewChange,
+    });
+    if (token !== detailRenderToken) return; // 그 사이 다른 문제가 열렸다
+    detailCtl = ctl;
+    lastRenderedDetailMode = 'image'; // 확대 단축키(+/-/0)는 항상 허용
+    el('#detailModeToggle').classList.toggle('hidden', !ctl.hasText);
+    const mobileTabView = el('#detailMobileTabView');
+    if (mobileTabView) mobileTabView.classList.toggle('hidden', !ctl.hasText);
+    detailToc.setController(ctl.hasComponents ? ctl : null);
+    updateDetailZoomUi();
+    updateDetailModeUi();
   }
 
-  /** 이미지/텍스트 두 보기 중 현재 모드에 맞는 쪽만 그린다. 문제 이미지는 오류에
-   * 대비해 텍스트 모드에서도 그대로 저장되어 있으니(추출은 "함께" 만드는 것이지 이미지를
-   * 대체하는 게 아님) 언제든 토글로 다시 이미지로 돌아갈 수 있다. */
-  function renderDetailBody(q) {
-    const mode = effectiveDetailMode(q);
-    lastRenderedDetailMode = mode;
-    el('#detailImages').classList.toggle('hidden', mode === 'text');
-    el('#detailViewToggle').classList.toggle('hidden', mode === 'text' || detailObjectURLs.length <= 1);
-    el('#detailPrevBtn').classList.toggle('hidden', mode === 'text');
-    el('#detailNextBtn').classList.toggle('hidden', mode === 'text');
-    el('#detailImageCounter').classList.toggle('hidden', mode === 'text');
-    el('#detailZoomBar').classList.toggle('hidden', mode === 'text');
-    el('#detailTextView').classList.toggle('hidden', mode !== 'text');
-    el('#detailModeToggle').textContent = mode === 'text' ? '🖼 이미지로 보기' : '🔤 텍스트로 보기';
-    if (mode === 'text') renderDetailTextView(q);
-    else { renderDetailImages(); clearMobileViewControls(); }
+  function onDetailViewChange() {
+    if (detailToc) detailToc.refresh();
+    updateDetailModeUi();
+  }
+
+  /** 상단 전체 텍스트/이미지 토글 글자 + 글자크기·테마 막대(텍스트 블록이 보일 때만) */
+  function updateDetailModeUi() {
+    if (!detailCtl) return;
+    const text = detailCtl.getDefaultMode() === 'text';
+    el('#detailModeToggle').textContent = text ? '🖼 전체 이미지로' : '🔤 전체 텍스트로';
+    const bar = el('#detailTextView');
+    const anyText = !!detailCtl.column.querySelector('.cvText');
+    if ((bar.dataset.on === '1') !== anyText) {
+      bar.dataset.on = anyText ? '1' : '0';
+      clearMobileViewControls();
+      // 글자크기/테마는 "Aa" 버튼을 눌렀을 때만 펼쳐 본문을 가리지 않게 한다
+      bar.innerHTML = anyText ? '<button type="button" class="tvPopBtn" title="글자 크기 · 문제 테마">Aa</button>' + TextViewPrefs.controlsHtml().replace('class="tvControls"', 'class="tvControls hidden"') : '';
+      if (anyText) {
+        bar.querySelector('.tvPopBtn').addEventListener('click', () => bar.querySelector('.tvControls').classList.toggle('hidden'));
+        TextViewPrefs.wireControls(bar, () => { if (detailCtl) detailCtl.refreshPrefs(); });
+        // 모바일에서는 글자크기/테마 컨트롤을 하단 "보기 설정" 시트로 옮긴다(리스너는 그대로 유지됨)
+        if (isMobileDetailViewer()) {
+          const tv = bar.querySelector('.tvControls');
+          const sheetBody = el('#detailMobileViewSheetBody');
+          if (tv && sheetBody) { tv.classList.remove('hidden'); sheetBody.appendChild(tv); const pb = bar.querySelector('.tvPopBtn'); if (pb) pb.remove(); }
+        }
+      }
+    }
   }
 
   async function toggleDetailMode() {
     detailTextPref = !detailTextPref;
     await DB.setMeta(DETAIL_TEXT_PREF_KEY, detailTextPref);
-    const q = await DB.getQuestion(currentDetailId);
-    if (q) renderDetailBody(q);
-  }
-
-  /** 설문(발문) + 선지를 그대로 텍스트로 보여준다. 이미지 없이 "읽기"만으로 문제를 볼 수 있게 하되,
-   * 여기선 읽기 전용 — 태그/정답/해설/메모 편집은 옆 사이드바 폼을 그대로 쓴다(중복 UI 방지).
-   * 원문자(①②③…) 마커는 화면에서 잘 안 보일 수 있어 (1)(2)(3) 식으로 바꿔서 표시한다
-   * (PDFAnalyze.prettifyMarkers — 표시용 변환일 뿐 저장된 값은 그대로). */
-  function renderDetailTextView(q) {
-    const stem = escapeHtml(PDFAnalyze.prettifyMarkers(q.stemFullText) || '(발문 텍스트를 인식하지 못했습니다)').replace(/\n/g, '<br>');
-    const choicesHtml = detailChoices.map((c) => `
-      <div class="detailTextChoice">
-        <span class="detailTextChoiceMarker">${escapeHtml(PDFAnalyze.markerToPlain(c.marker))}</span>
-        <span class="detailTextChoiceBody">${escapeHtml(PDFAnalyze.prettifyMarkers(c.text))}</span>
-      </div>`).join('');
-    const view = el('#detailTextView');
-    view.innerHTML = `
-      ${TextViewPrefs.controlsHtml()}
-      <div class="tvReadingArea">
-        <div class="detailTextStem">${stem}</div>
-        <div class="detailTextChoices">${choicesHtml}</div>
-      </div>
-    `;
-    TextViewPrefs.applyTo(view.querySelector('.tvReadingArea'));
-    TextViewPrefs.wireControls(view, () => TextViewPrefs.applyTo(view.querySelector('.tvReadingArea')));
-    // 모바일에서는 방금 만든 글자크기/테마 컨트롤(.tvControls)을 뷰어 안에 그대로 두지 않고
-    // 하단 "보기 설정" 시트로 옮긴다(리스너는 위에서 이미 연결했으므로 옮겨도 그대로 동작).
-    // 매번 새로 만들어지므로, 시트에 남아있던 이전 문제의 컨트롤은 먼저 지운다.
-    clearMobileViewControls();
-    if (isMobileDetailViewer()) {
-      const tv = view.querySelector('.tvControls');
-      const sheetBody = el('#detailMobileViewSheetBody');
-      if (tv && sheetBody) sheetBody.appendChild(tv);
-    }
+    if (detailCtl) detailCtl.setDefaultMode(detailDefaultMode(), true); // 구성요소별 개별 설정은 초기화
   }
 
   /** 상단바의 "이전 문제/다음 문제" 버튼 활성/비활성 상태 및 위치 표시(n / 전체) 갱신 */
@@ -958,91 +941,18 @@ const LibraryUI = (() => {
     openDetail(detailNavList[newIndex].id, detailNavList);
   }
 
-  /** 전체화면 뷰어의 이미지 영역 렌더링 — '나란히 보기'(균등 분할)와 '한 장씩 보기'(화살표 이동)를 전환 */
-  function renderDetailImages() {
-    const imgs = detailObjectURLs;
-    const multi = imgs.length > 1;
-    const wrap = el('#detailImages');
-
-    el('#detailViewToggle').classList.toggle('hidden', !multi);
-    el('#detailViewToggle').textContent = detailViewMode === 'all' ? '⊞ 한 장씩 보기' : '▦ 나란히 보기';
-    el('#detailPrevBtn').classList.toggle('hidden', !(multi && detailViewMode === 'single'));
-    el('#detailNextBtn').classList.toggle('hidden', !(multi && detailViewMode === 'single'));
-    el('#detailImageCounter').classList.toggle('hidden', !(multi && detailViewMode === 'single'));
-    if (multi && detailViewMode === 'single') {
-      el('#detailImageCounter').textContent = `${detailIndex + 1} / ${imgs.length}`;
-    }
-
-    // 1장을 볼 때도 "여러 장을 나란히 볼 때 쓰는 것과 동일한 그리드(칸=1개)"를 그대로 재사용한다.
-    // 이렇게 하면 1장 보기의 기본(줌 100%) 크기가 "칸이 뷰어 전체를 꽉 채운다"는 동일한 기준을 갖게 되고,
-    // 확대/스크롤 로직도 별도 분기 없이 완전히 동일하게 동작한다.
-    const showImgs = (!multi || detailViewMode === 'single')
-      ? [imgs[Math.min(detailIndex, imgs.length - 1)] || '']
-      : imgs;
-    wrap.className = 'detailImages ' + (detailPartsLayout === 'row' ? 'layout-row' : 'layout-stack');
-    wrap.style.setProperty('--n', String(showImgs.length));
-    wrap.innerHTML = showImgs
-      .map((u) => (u ? `<div class="detailImgCell"><img src="${u}" class="detailImg"></div>` : ''))
-      .join('');
-    applyZoom();
-  }
-
-  /** 확대 배율(detailZoom)을 min/max로 제한하고 화면에 반영 */
+  /** 확대 배율(detailZoom)을 min/max로 제한하고 화면에 반영(세로 열의 폭을 배율만큼 키운다) */
   function setZoom(next) {
     detailZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
-    applyZoom();
+    if (detailCtl) detailCtl.setZoom(detailZoom);
+    updateDetailZoomUi();
   }
 
-  /**
-   * 현재 detailZoom을 화면의 모든 .detailImgCell(1장/여러 장 공용)에 적용.
-   *
-   * 퍼센트(%) 기반이 아니라 "이미지 원본 픽셀 크기 × 배율(px)"로 직접 계산해서 적용한다.
-   * 이유: width/height를 칸(container) 대비 %로 주면, 칸 종횡비와 이미지 종횡비가 다를 때
-   * object-fit:contain과 얽혀서 배율 1 부근에서 방향에 따라 계산이 어긋나거나(줌아웃이 안 먹는 것처럼
-   * 보임), 그리드 트랙 크기 계산 타이밍과 얽혀 실제로는 스타일이 바뀌어도 시각적으로 그대로인 것처럼
-   * 보이는 경우가 있었다. 아래처럼 항상 절대 px 크기를 계산해서 넣으면 그런 문제가 없다:
-   *   1) 이미지의 실제 원본 크기(naturalWidth/Height)와 칸의 현재 크기(clientWidth/Height)로
-   *      "칸에 맞춤(축소만, 확대는 안 함)" 배율(fitScale)을 구하고,
-   *   2) 최종 배율 = fitScale × detailZoom 을 원본 크기에 곱해 실제 px width/height로 지정한다.
-   * detailZoom=1이면 기존과 동일한 "칸에 맞춤" 크기가 그대로 나오고, 1보다 크면 칸보다 커져서
-   * 칸의 overflow:auto로 스크롤이 생기고, 1보다 작으면 기본보다 더 작아진다(축소도 정상 동작).
-   */
-  function applyZoom() {
+  function updateDetailZoomUi() {
     el('#detailZoomLabel').textContent = Math.round(detailZoom * 100) + '%';
     el('#detailZoomOutBtn').disabled = detailZoom <= ZOOM_MIN + 0.001;
     el('#detailZoomInBtn').disabled = detailZoom >= ZOOM_MAX - 0.001;
-
-    elAll('.detailImgCell').forEach((cell) => {
-      const img = cell.querySelector('.detailImg');
-      if (!img) return;
-      cell.classList.toggle('zoomed', detailZoom > 1.001);
-      const sizeNow = () => {
-        const nw = img.naturalWidth, nh = img.naturalHeight;
-        const cw = cell.clientWidth, ch = cell.clientHeight;
-        if (!nw || !nh || !cw || !ch) return;
-        const fitScale = Math.min(cw / nw, ch / nh, 1);
-        const scale = fitScale * detailZoom;
-        img.style.width = Math.round(nw * scale) + 'px';
-        img.style.height = Math.round(nh * scale) + 'px';
-        if (detailZoom <= 1.001) { cell.scrollLeft = 0; cell.scrollTop = 0; }
-      };
-      if (img.complete && img.naturalWidth) sizeNow();
-      else img.addEventListener('load', sizeNow, { once: true });
-    });
-  }
-
-  function toggleDetailViewMode() {
-    if (detailObjectURLs.length <= 1) return;
-    detailViewMode = detailViewMode === 'all' ? 'single' : 'all';
-    renderDetailImages();
-  }
-
-  function stepDetailImage(delta) {
-    if (detailObjectURLs.length <= 1) return;
-    if (detailViewMode !== 'single') detailViewMode = 'single';
-    const n = detailObjectURLs.length;
-    detailIndex = (detailIndex + delta + n) % n;
-    renderDetailImages();
+    el('#detailImages').classList.toggle('zoomed', detailZoom > 1.001);
   }
 
   function closeDetail() {
@@ -1050,6 +960,9 @@ const LibraryUI = (() => {
     detailObjectURLs.forEach((u) => URL.revokeObjectURL(u));
     detailObjectURLs = [];
     currentDetailId = null;
+    detailRenderToken++;
+    detailCtl = null;
+    if (detailToc) detailToc.setController(null);
     detailNavList = [];
     detailNavIndex = -1;
     zoomPanState = null;

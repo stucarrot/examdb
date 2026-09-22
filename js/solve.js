@@ -31,6 +31,9 @@ const SolveUI = (() => {
   let questions = [];         // session.questionIds에 대응하는 실제 문제 객체 배열(풀이 중 캐시)
   let urlCache = new Map();   // qid -> [objectURL, ...]
   let choicesCache = new Map(); // qid -> choices[] (텍스트 보기용, hasTextChoices인 문제만 채워짐)
+  let solveCtl = null;        // 문제 본문 블록 뷰어(compView.js) — 세로로 이은 조각 + 구성요소별 이미지/텍스트
+  let solveToc = null;        // 플로팅 목차(compToc.js)
+  let renderToken = 0;
   let textMode = false;       // 이미지 대신 텍스트로 풀기 — 설정을 기억해뒀다가 다음 진입 때도 이어서 씀
   // "🎨 보기 설정" 패널(이미지/텍스트 전환, 마크 표시, 글자·테마)이 지금 펼쳐져 있는지.
   // 세션이 끝나거나 새로 시작해도 딱히 기억해둘 필요는 없는 값이라(늘 접힌 채로 시작하는 게
@@ -90,6 +93,7 @@ const SolveUI = (() => {
     el('#solveStartBtn').addEventListener('click', onStartClick);
 
     // ---- 풀이 화면 ----
+    solveToc = CompToc.create(el('.solveViewerWrap'), el('#solveTocBtn'));
     el('#solveExitBtn').addEventListener('click', onExitClick);
     el('#solvePrevBtn').addEventListener('click', () => goTo(session.index - 1));
     el('#solveNextBtn').addEventListener('click', onNextClick);
@@ -553,50 +557,42 @@ const SolveUI = (() => {
     // 기억해뒀다가 새로 그린 뒤 그대로 복원한다. 문제 자체가 바뀐 경우(renderedQid !== q.id,
     // 즉 goTo()를 거쳐온 경우)는 복원하지 않아 자연스럽게 스크롤이 맨 위로 초기화된다.
     const sameQuestion = renderedQid === q.id;
-    const prevReadingArea = el('.tvReadingArea');
-    const savedTextScrollTop = sameQuestion && prevReadingArea ? prevReadingArea.scrollTop : 0;
     const prevImageArea = el('#solveImageArea');
     const savedImageScrollTop = sameQuestion && prevImageArea ? prevImageArea.scrollTop : 0;
     renderedQid = q.id;
+    const token = ++renderToken;
 
     ensureTimerFor(q.id);
 
     renderInfoPanel(q);
 
     if (!urlCache.has(q.id)) urlCache.set(q.id, await DB.getImageURLs(q));
-
-    renderViewSettingsPanel(q);
-    // 텍스트 모드를 켜뒀어도 이 문제가 텍스트 선지를 못 뽑아낸 문제라면(hasTextChoices=false)
-    // 이미지로 자동 대체해서 보여준다 — 토글 자체(preference)는 그대로 켜진 채 유지되므로
-    // 다음 문제로 넘어가면 다시 텍스트로 보인다.
-    const showText = textMode && q.hasTextChoices;
-    el('#solveImageArea').classList.toggle('hidden', showText);
-    el('#solveTextArea').classList.toggle('hidden', !showText);
-
-    if (showText) {
-      if (!choicesCache.has(q.id)) {
-        const list = await DB.getChoicesByQuestion(q.id);
-        list.sort((a, b) => (a.markerIndex || 0) - (b.markerIndex || 0));
-        choicesCache.set(q.id, list);
-      }
-      renderTextArea(q, choicesCache.get(q.id));
-      if (savedTextScrollTop) {
-        const readingArea = el('.tvReadingArea');
-        if (readingArea) readingArea.scrollTop = savedTextScrollTop;
-      }
-    } else {
-      const imgArea = el('#solveImageArea');
-      imgArea.innerHTML = urlCache.get(q.id).map((u) => `<img src="${u}" alt="문제 이미지">`).join('');
-      imgArea.classList.toggle('layout-row', q.partsLayout === 'row');
-      if (savedImageScrollTop) imgArea.scrollTop = savedImageScrollTop;
+    // 구성요소가 없는 옛 문제의 텍스트 보기(설문/선지)는 choices 스토어에서 가져온다
+    if (q.hasTextChoices && !choicesCache.has(q.id)) {
+      const list = await DB.getChoicesByQuestion(q.id);
+      list.sort((a, b) => (a.markerIndex || 0) - (b.markerIndex || 0));
+      choicesCache.set(q.id, list);
     }
+    if (token !== renderToken) return; // 그 사이 다른 문제로 넘어감
 
-    // 그리기 오버레이 — 지금 실제로 보이는 스크롤 컨테이너(이미지 영역 또는 텍스트
-    // 읽기 영역)를 매번 새로 알려준다(둘 다 render()마다 innerHTML이 새로 그려지므로
-    // DOM 참조가 매번 바뀔 수 있음). 이미지/텍스트(마크다운) 모드 어느 쪽이든 같은
-    // 방식으로 동작해서, 보기 방식을 바꿔도 그리기를 바로 이어서 쓸 수 있다.
-    const drawContentEl = showText ? el('#solveTextArea .tvReadingArea') : el('#solveImageArea');
-    Drawing.setContext(drawContentEl, showText ? 'text' : 'image', q, (qq) => DB.updateQuestion(qq));
+    // 문제 본문: 여러 조각도 세로로 이어 한 열로, 구성요소가 있으면 구성요소 블록(블록마다 이미지/텍스트 선택 가능).
+    // textMode는 "전체 텍스트로 보기" 선호값 — 텍스트가 가능한 블록만 텍스트로, 나머지(표/그래프 등)는 이미지.
+    el('#solveImageArea').classList.remove('hidden');
+    el('#solveTextArea').classList.add('hidden');
+    const imgArea = el('#solveImageArea');
+    imgArea.classList.remove('layout-row');
+    const ctl = await CompView.mount(imgArea, q, urlCache.get(q.id), {
+      choices: choicesCache.get(q.id) || [], defaultMode: textMode ? 'text' : 'image', zoom: 1, onChange: onSolveViewChange,
+    });
+    if (token !== renderToken) return;
+    solveCtl = ctl;
+    if (savedImageScrollTop) imgArea.scrollTop = savedImageScrollTop;
+    solveToc.setController(ctl.hasComponents ? ctl : null);
+    renderViewSettingsPanel(q);
+
+    // 그리기 오버레이 — 스크롤 컨테이너는 항상 #solveImageArea. 보기 방식(이미지/텍스트/혼합)이 바뀌면
+    // 레이아웃이 달라지므로 필기는 보기 방식별로(ctl.signature()) 따로 저장한다.
+    Drawing.setContext(imgArea, ctl.signature(), q, (qq) => DB.updateQuestion(qq));
 
     updateMarkBadge();
     renderChoices();
@@ -680,21 +676,13 @@ const SolveUI = (() => {
    * (①②③④⑤ 버튼)를 그대로 쓴다 — 여긴 "읽기"만 담당해서 답 선택 로직을 중복 구현하지 않는다.
    * 원문자 마커는 화면에서 잘 안 보일 수 있어 (1)(2)(3) 식으로 바꿔 표시한다(표시용 변환만,
    * 저장된 marker/code 값 자체는 그대로 — PDFAnalyze.prettifyMarkers 참고). */
-  function renderTextArea(q, choices) {
-    const stem = escapeHtml(PDFAnalyze.prettifyMarkers(q.stemFullText) || '(발문 텍스트를 인식하지 못했습니다)').replace(/\n/g, '<br>');
-    const choicesHtml = (choices || []).map((c) => `
-      <div class="solveTextChoice">
-        <span class="solveTextChoiceMarker">${escapeHtml(PDFAnalyze.markerToPlain(c.marker))}</span>
-        <span class="solveTextChoiceBody">${escapeHtml(PDFAnalyze.prettifyMarkers(c.text))}</span>
-      </div>`).join('');
-    const area = el('#solveTextArea');
-    area.innerHTML = `
-      <div class="tvReadingArea">
-        <div class="solveTextStem">${stem}</div>
-        <div class="solveTextChoices">${choicesHtml}</div>
-      </div>
-    `;
-    TextViewPrefs.applyTo(area.querySelector('.tvReadingArea'));
+  /** 블록 하나를 🔤/🖼로 바꾸거나 전체 보기 방식이 바뀌어 레이아웃이 달라진 뒤: 목차/보기설정 갱신, 필기는 새 보기 방식의 저장 칸으로 전환 */
+  function onSolveViewChange() {
+    const q = questions[session.index];
+    if (!q || !solveCtl) return;
+    if (solveToc) solveToc.refresh();
+    renderViewSettingsPanel(q);
+    Drawing.setContext(el('#solveImageArea'), solveCtl.signature(), q, (qq) => DB.updateQuestion(qq));
   }
 
   /** 상단바 "🎨 보기 설정" 패널 — 이미지/텍스트 전환, 마크 표시, 글자크기/테마를 한 곳에
@@ -702,10 +690,12 @@ const SolveUI = (() => {
    * 열고 닫으며(viewSettingsOpen), 매 render()마다 이 문제 기준으로 다시 그린다(특히
    * "보기 방식" 줄은 hasTextChoices가 아니면 숨겨야 해서 문제마다 달라질 수 있음). */
   function renderViewSettingsPanel(q) {
+    const hasText = !!(solveCtl && solveCtl.hasText);
     const modeGroup = el('#solveViewModeGroup');
-    modeGroup.classList.toggle('hidden', !q.hasTextChoices);
-    el('#solveViewModeImageBtn').classList.toggle('active', !textMode || !q.hasTextChoices);
-    el('#solveViewModeTextBtn').classList.toggle('active', textMode && q.hasTextChoices);
+    modeGroup.classList.toggle('hidden', !hasText);
+    const isText = hasText && solveCtl.getDefaultMode() === 'text';
+    el('#solveViewModeImageBtn').classList.toggle('active', !isText);
+    el('#solveViewModeTextBtn').classList.toggle('active', isText);
 
     updateMarkVisBtn();
     updateDrawHideToggleBtn();
@@ -713,12 +703,7 @@ const SolveUI = (() => {
 
     const host = el('#solveTvControlsHost');
     host.innerHTML = TextViewPrefs.controlsHtml();
-    TextViewPrefs.wireControls(host, () => {
-      // 지금 텍스트 모드로 보고 있는 중이면 그 읽기 영역에도 즉시 반영(전체 재렌더 없이
-      // 클래스만 다시 계산 — solve.js의 다른 render() 호출들과 마찬가지로 스크롤 유지).
-      const readingArea = el('#solveTextArea .tvReadingArea');
-      if (readingArea) TextViewPrefs.applyTo(readingArea);
-    });
+    TextViewPrefs.wireControls(host, () => { if (solveCtl) solveCtl.refreshPrefs(); });
   }
 
   /** 상단바 "ℹ️ 문제 정보" 패널 — 코드/시험명/과목/번호 등 짧은 정보 + 라이브러리 새 탭
@@ -791,13 +776,12 @@ const SolveUI = (() => {
   }
 
   function onViewModeBtnClick(mode) {
-    const q = questions[session.index];
-    if (mode === 'text' && !(q && q.hasTextChoices)) return; // 텍스트 지원 안 되는 문제는 무시
+    if (!solveCtl || !solveCtl.hasText) return; // 텍스트로 볼 수 있는 부분이 없는 문제는 무시
     const nextTextMode = mode === 'text';
-    if (nextTextMode === textMode) return;
+    if (nextTextMode === textMode && solveCtl.getDefaultMode() === mode) return;
     textMode = nextTextMode;
     DB.setMeta(TEXT_MODE_KEY, textMode);
-    render();
+    solveCtl.setDefaultMode(mode, true); // 구성요소별 개별 설정은 초기화 → onChange가 보기설정/필기/목차를 갱신
   }
 
   function renderChoices() {
